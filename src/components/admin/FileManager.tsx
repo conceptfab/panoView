@@ -26,13 +26,17 @@ import {
   Image as ImageIcon,
   Database,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatFileSize } from '@/utils/helpers';
+import { Progress } from '@/components/ui/progress';
 
 interface ProjectWithSize extends Project {
   size?: number;
 }
+
+type ImportStage = 'idle' | 'uploading' | 'processing' | 'done';
 
 interface FileManagerProps {
   projects: ProjectWithSize[];
@@ -45,6 +49,9 @@ export function FileManager({ projects }: FileManagerProps) {
   const [importName, setImportName] = useState('');
   const [importDescription, setImportDescription] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [importStage, setImportStage] = useState<ImportStage>('idle');
+  const [importProgress, setImportProgress] = useState(0);
+  const [importStatus, setImportStatus] = useState('');
   const [rebuilding, setRebuilding] = useState(false);
 
   // Stats
@@ -57,14 +64,26 @@ export function FileManager({ projects }: FileManagerProps) {
     toast.success('Pobieranie kopii zapasowej wszystkich projektów…');
   };
 
+  const resetImportState = () => {
+    setImportStage('idle');
+    setImportProgress(0);
+    setImportStatus('');
+  };
+
   const handleUploadProject = async () => {
     if (!uploadFile) {
       toast.error('Wybierz plik ZIP');
       return;
     }
     setUploading(true);
+    setImportStage('uploading');
+    setImportProgress(2);
+    setImportStatus('Przygotowanie wysyłki…');
+
+    let processingTimer: ReturnType<typeof setInterval> | null = null;
+    let succeeded = false;
+
     try {
-      // Direct upload ZIP do Vercel Blob (omija limit 4.5MB requestu)
       const blob = await upload(
         `tmp/uploads/import/${uploadFile.name}`,
         uploadFile,
@@ -72,8 +91,22 @@ export function FileManager({ projects }: FileManagerProps) {
           access: 'public',
           handleUploadUrl: '/api/upload',
           clientPayload: JSON.stringify({ purpose: 'import' }),
+          onUploadProgress: ({ percentage }) => {
+            const pct = Math.min(65, Math.max(2, Math.round(percentage * 0.65)));
+            setImportProgress(pct);
+            setImportStatus(`Wysyłanie ZIP… ${Math.round(percentage)}%`);
+          },
         }
       );
+
+      setImportStage('processing');
+      setImportProgress(68);
+      setImportStatus('Rozpakowywanie archiwum i wgrywanie panoram…');
+
+      processingTimer = setInterval(() => {
+        setImportProgress((prev) => (prev < 92 ? prev + 1 : prev));
+      }, 2500);
+
       const res = await fetch('/api/files/upload-project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,6 +120,12 @@ export function FileManager({ projects }: FileManagerProps) {
       if (!res.ok) {
         throw new Error(data.error || 'Błąd importu');
       }
+
+      setImportStage('done');
+      setImportProgress(100);
+      setImportStatus('Projekt zaimportowany');
+      succeeded = true;
+
       toast.success(
         `Projekt „${data.project?.name ?? '?'}" został zaimportowany`
       );
@@ -94,13 +133,16 @@ export function FileManager({ projects }: FileManagerProps) {
       setUploadFile(null);
       setImportName('');
       setImportDescription('');
+      resetImportState();
       refresh();
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : 'Nie udało się zaimportować projektu'
       );
     } finally {
+      if (processingTimer) clearInterval(processingTimer);
       setUploading(false);
+      if (!succeeded) resetImportState();
     }
   };
 
@@ -280,11 +322,13 @@ export function FileManager({ projects }: FileManagerProps) {
       <Dialog
         open={uploadDialogOpen}
         onOpenChange={(open) => {
+          if (!open && uploading) return;
           if (!open) {
             setUploadDialogOpen(false);
             setUploadFile(null);
             setImportName('');
             setImportDescription('');
+            resetImportState();
           }
         }}
       >
@@ -305,8 +349,9 @@ export function FileManager({ projects }: FileManagerProps) {
             <input
               type="file"
               accept=".zip"
-              className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-secondary file:text-secondary-foreground"
+              className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-secondary file:text-secondary-foreground disabled:opacity-50"
               onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              disabled={uploading}
             />
           </div>
           <div className="space-y-2">
@@ -316,6 +361,7 @@ export function FileManager({ projects }: FileManagerProps) {
               placeholder="Z ZIP lub wpisz nową"
               value={importName}
               onChange={(e) => setImportName(e.target.value)}
+              disabled={uploading}
             />
             <p className="text-xs text-muted-foreground">
               Ustalona przy imporcie; wpisana tutaj nadpisze nazwę z
@@ -331,8 +377,34 @@ export function FileManager({ projects }: FileManagerProps) {
               onChange={(e) => setImportDescription(e.target.value)}
               rows={2}
               className="resize-none"
+              disabled={uploading}
             />
           </div>
+
+          {uploading && (
+            <div
+              className="space-y-2 rounded-lg border border-muted/60 bg-muted/30 p-3"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex items-center gap-2 min-w-0">
+                  <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+                  <span className="truncate">{importStatus}</span>
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {importProgress}%
+                </span>
+              </div>
+              <Progress value={importProgress} />
+              <p className="text-xs text-muted-foreground">
+                {importStage === 'uploading'
+                  ? 'Trwa wysyłanie archiwum ZIP do chmury.'
+                  : 'Trwa rozpakowanie ZIP i wgrywanie panoram — duże projekty mogą zająć kilka minut. Nie zamykaj tego okna.'}
+              </p>
+            </div>
+          )}
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -348,7 +420,14 @@ export function FileManager({ projects }: FileManagerProps) {
               onClick={handleUploadProject}
               disabled={!uploadFile || uploading}
             >
-              {uploading ? 'Importowanie…' : 'Importuj'}
+              {uploading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Importowanie…
+                </>
+              ) : (
+                'Importuj'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
