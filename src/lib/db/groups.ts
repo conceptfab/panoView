@@ -1,25 +1,60 @@
-import { readJsonFileWithDefault, writeJsonFile } from './json-store';
-import { Group, GroupsData } from '@/types';
+import { eq, inArray, and } from 'drizzle-orm';
+import { getDb } from './client';
+import { groups as groupsTable, groupProjects } from './schema';
+import { Group } from '@/types';
 import { generateId, formatDate } from '@/utils/helpers';
-import { groupsDataSchema } from '@/utils/validation';
-import {
-  syncGroupProjectIdsToProjects,
-  removeGroupFromAllProjects,
-} from './sync-groups-projects';
+import { syncGroupProjectIdsToProjects } from './sync-groups-projects';
 
-const GROUPS_FILE = 'groups.json';
+type GroupRow = typeof groupsTable.$inferSelect;
+
+function toGroup(row: GroupRow, projectIds: string[]): Group {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    color: row.color,
+    createdAt: row.createdAt,
+    projectIds,
+  };
+}
+
+async function projectIdsForGroups(
+  groupIds: string[]
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (groupIds.length === 0) return map;
+  const rows = await getDb()
+    .select()
+    .from(groupProjects)
+    .where(inArray(groupProjects.groupId, groupIds));
+  for (const row of rows) {
+    const list = map.get(row.groupId) ?? [];
+    list.push(row.projectId);
+    map.set(row.groupId, list);
+  }
+  return map;
+}
 
 export async function getGroups(): Promise<Group[]> {
-  const data = await readJsonFileWithDefault<GroupsData>(GROUPS_FILE, {
-    groups: [],
-  });
-  const validated = groupsDataSchema.parse(data);
-  return validated.groups;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(groupsTable)
+    .orderBy(groupsTable.createdAt);
+  const projectsMap = await projectIdsForGroups(rows.map((r) => r.id));
+  return rows.map((r) => toGroup(r, projectsMap.get(r.id) ?? []));
 }
 
 export async function getGroupById(id: string): Promise<Group | null> {
-  const groups = await getGroups();
-  return groups.find((g) => g.id === id) || null;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(groupsTable)
+    .where(eq(groupsTable.id, id))
+    .limit(1);
+  if (rows.length === 0) return null;
+  const projectsMap = await projectIdsForGroups([id]);
+  return toGroup(rows[0], projectsMap.get(id) ?? []);
 }
 
 export async function createGroup(
@@ -27,8 +62,7 @@ export async function createGroup(
   description: string = '',
   color: string = '#6b7280'
 ): Promise<Group> {
-  const groups = await getGroups();
-
+  const db = getDb();
   const newGroup: Group = {
     id: generateId('group'),
     name,
@@ -37,9 +71,13 @@ export async function createGroup(
     createdAt: formatDate(new Date()),
     projectIds: [],
   };
-
-  groups.push(newGroup);
-  await writeJsonFile<GroupsData>(GROUPS_FILE, { groups });
+  await db.insert(groupsTable).values({
+    id: newGroup.id,
+    name: newGroup.name,
+    description: newGroup.description,
+    color: newGroup.color,
+    createdAt: newGroup.createdAt,
+  });
   return newGroup;
 }
 
@@ -47,34 +85,54 @@ export async function updateGroup(
   id: string,
   updates: Partial<Omit<Group, 'id' | 'createdAt'>>
 ): Promise<Group | null> {
-  const groups = await getGroups();
-  const index = groups.findIndex((g) => g.id === id);
+  const db = getDb();
+  const { projectIds, ...fields } = updates;
 
-  if (index === -1) return null;
+  const columnUpdates: Partial<GroupRow> = {};
+  if (fields.name !== undefined) columnUpdates.name = fields.name;
+  if (fields.description !== undefined)
+    columnUpdates.description = fields.description;
+  if (fields.color !== undefined) columnUpdates.color = fields.color;
 
-  groups[index] = { ...groups[index], ...updates };
-  await writeJsonFile<GroupsData>(GROUPS_FILE, { groups });
-
-  if (updates.projectIds !== undefined) {
-    await syncGroupProjectIdsToProjects(id, groups[index].projectIds);
+  if (Object.keys(columnUpdates).length > 0) {
+    const updated = await db
+      .update(groupsTable)
+      .set(columnUpdates)
+      .where(eq(groupsTable.id, id))
+      .returning();
+    if (updated.length === 0) return null;
+  } else {
+    const exists = await db
+      .select({ id: groupsTable.id })
+      .from(groupsTable)
+      .where(eq(groupsTable.id, id))
+      .limit(1);
+    if (exists.length === 0) return null;
   }
-  return groups[index];
+
+  if (projectIds !== undefined) {
+    await syncGroupProjectIdsToProjects(id, projectIds);
+  }
+
+  return getGroupById(id);
 }
 
 export async function addProjectToGroup(
   groupId: string,
   projectId: string
 ): Promise<boolean> {
-  const groups = await getGroups();
-  const group = groups.find((g) => g.id === groupId);
+  const db = getDb();
+  const group = await db
+    .select({ id: groupsTable.id })
+    .from(groupsTable)
+    .where(eq(groupsTable.id, groupId))
+    .limit(1);
+  if (group.length === 0) return false;
 
-  if (!group) return false;
-
-  if (!group.projectIds.includes(projectId)) {
-    group.projectIds.push(projectId);
-    await writeJsonFile<GroupsData>(GROUPS_FILE, { groups });
-  }
-
+  await db
+    .insert(groupProjects)
+    .values({ groupId, projectId })
+    .onConflictDoNothing();
   return true;
 }
 
@@ -82,25 +140,31 @@ export async function removeProjectFromGroup(
   groupId: string,
   projectId: string
 ): Promise<boolean> {
-  const groups = await getGroups();
-  const group = groups.find((g) => g.id === groupId);
+  const db = getDb();
+  const group = await db
+    .select({ id: groupsTable.id })
+    .from(groupsTable)
+    .where(eq(groupsTable.id, groupId))
+    .limit(1);
+  if (group.length === 0) return false;
 
-  if (!group) return false;
-
-  group.projectIds = group.projectIds.filter((id) => id !== projectId);
-  await writeJsonFile<GroupsData>(GROUPS_FILE, { groups });
-
+  await db
+    .delete(groupProjects)
+    .where(
+      and(
+        eq(groupProjects.groupId, groupId),
+        eq(groupProjects.projectId, projectId)
+      )
+    );
   return true;
 }
 
 export async function deleteGroup(id: string): Promise<boolean> {
-  const groups = await getGroups();
-  const index = groups.findIndex((g) => g.id === id);
-
-  if (index === -1) return false;
-
-  await removeGroupFromAllProjects(id);
-  groups.splice(index, 1);
-  await writeJsonFile<GroupsData>(GROUPS_FILE, { groups });
-  return true;
+  const db = getDb();
+  // group_projects i user_groups mają ON DELETE CASCADE
+  const deleted = await db
+    .delete(groupsTable)
+    .where(eq(groupsTable.id, id))
+    .returning({ id: groupsTable.id });
+  return deleted.length > 0;
 }

@@ -17,7 +17,6 @@ import {
   LayoutGrid,
   FolderOpen,
   Users,
-  FileText,
   BarChart3,
   LogOut,
   Menu,
@@ -42,7 +41,6 @@ export function DashboardNav({ userRole, userEmail }: DashboardNavProps) {
     ? [
         { href: '/admin/projects', label: 'Projekty', icon: FolderOpen },
         { href: '/admin/users', label: 'Użytkownicy', icon: Users },
-        { href: '/admin/files', label: 'Pliki', icon: FileText },
         { href: '/admin/stats', label: 'Statystyki', icon: BarChart3 },
       ]
     : isEditor

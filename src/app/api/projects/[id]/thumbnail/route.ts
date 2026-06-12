@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { mkdir } from 'fs/promises';
-import path from 'path';
 import sharp from 'sharp';
 import { requireAdminOrEditor, editorCanEditProject } from '@/lib/auth/session';
 import { getProjectById, updateProject } from '@/lib/db/projects';
 import { getUserById } from '@/lib/db/users';
-import { getDataRoot } from '@/lib/data-root';
+import { thumbnailKey, putBlob } from '@/lib/storage/blob';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -43,24 +41,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
-    // Setup directories
-    const projectDir = path.join(
-      getDataRoot(),
-      'uploads',
-      'projects',
-      projectId
-    );
-    const thumbnailsDir = path.join(projectDir, 'thumbnails');
-    await mkdir(thumbnailsDir, { recursive: true });
-
-    // Save as single project thumbnail
-    const thumbnailPath = path.join(thumbnailsDir, 'thumb.webp');
-
-    // Process and save thumbnail (800x400)
-    await sharp(buffer)
+    // Process thumbnail (800x400) and store in Blob
+    const thumbBuffer = await sharp(buffer)
       .resize(800, 400, { fit: 'cover' })
       .webp({ quality: 85 })
-      .toFile(thumbnailPath);
+      .toBuffer();
+    await putBlob(thumbnailKey(projectId, 'thumb.webp'), thumbBuffer, {
+      contentType: 'image/webp',
+    });
 
     // Update project thumbnailUrl
     await updateProject(projectId, {

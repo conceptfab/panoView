@@ -1,65 +1,86 @@
-// oxlint-disable react-doctor/async-parallel react-doctor/async-await-in-loop
-import { promises as fs } from 'fs';
-import { existsSync } from 'fs';
-import path from 'path';
-import {
-  readJsonFileWithDefault,
-  writeJsonFile,
-  ensureDir,
-  deleteDir,
-} from './json-store';
-import { getDataRoot } from '@/lib/data-root';
-import { Project, ProjectsData, ProjectConfig } from '@/types';
+import { eq, inArray } from 'drizzle-orm';
+import { getDb } from './client';
+import { projects as projectsTable, groupProjects, shareLinks } from './schema';
+import { Project, ProjectConfig } from '@/types';
 import { generateId, formatDate, projectSlugFromName } from '@/utils/helpers';
-import { projectsDataSchema, projectConfigSchema } from '@/utils/validation';
-import { syncGroupsProjectIdsFromProjects } from './sync-groups-projects';
+import { projectConfigSchema } from '@/utils/validation';
+import { setProjectGroupIds, groupIdsForProjects } from './sync-groups-projects';
 import { ensurePanoramaVariantsForProject } from '@/lib/panorama-variants-server';
-import { deleteShareLink } from './share-links';
+import {
+  projectPrefix,
+  copyPrefix,
+  deletePrefix,
+  prefixSize,
+} from '@/lib/storage/blob';
 
-const PROJECTS_FILE = 'projects.json';
-const UPLOADS_DIR = path.join(getDataRoot(), 'uploads', 'projects');
+type ProjectRow = typeof projectsTable.$inferSelect;
+
+function configPathFor(id: string): string {
+  return `/uploads/projects/${id}/config.json`;
+}
+
+function toProject(row: ProjectRow, groupIds: string[]): Project {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    thumbnailUrl: row.thumbnailUrl,
+    configPath: configPathFor(row.id),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    createdBy: row.createdBy,
+    groupIds,
+    isPublished: row.isPublished,
+    panoramaCount: row.panoramaCount,
+  };
+}
 
 export async function getProjects(): Promise<Project[]> {
-  const data = await readJsonFileWithDefault<ProjectsData>(PROJECTS_FILE, {
-    projects: [],
-  });
-  const validated = projectsDataSchema.parse(data);
-  return validated.projects;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(projectsTable)
+    .orderBy(projectsTable.createdAt);
+  const groupsMap = await groupIdsForProjects(rows.map((r) => r.id));
+  return rows.map((r) => toProject(r, groupsMap.get(r.id) ?? []));
 }
 
 /**
- * Lista projektów budowana z dysku przy każdym odświeżeniu.
- * Czyta katalog uploads/projects/, dla każdego podkatalogu szuka wpisu w projects.json.
+ * Dawniej: lista projektów z istniejącym folderem na dysku.
+ * Teraz baza jest źródłem prawdy – zwraca wszystkie projekty.
  */
 export async function getProjectsWithExistingFolders(): Promise<Project[]> {
-  let dirIds: string[];
-  try {
-    const entries = await fs.readdir(UPLOADS_DIR, { withFileTypes: true });
-    dirIds = entries.flatMap((e) => (e.isDirectory() ? [e.name] : []));
-  } catch {
-    dirIds = [];
-  }
-  const projects = await getProjects();
-  const byId = new Map(projects.map((p) => [p.id, p]));
-  return dirIds.flatMap((id) => {
-    const project = byId.get(id);
-    return project ? [project] : [];
-  });
+  return getProjects();
 }
 
 export async function getProjectById(id: string): Promise<Project | null> {
-  const projects = await getProjects();
-  const project = projects.find((p) => p.id === id) || null;
-  if (!project) return null;
-  if (!existsSync(path.join(UPLOADS_DIR, id))) return null;
-  return project;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(projectsTable)
+    .where(eq(projectsTable.id, id))
+    .limit(1);
+  if (rows.length === 0) return null;
+  const groupsMap = await groupIdsForProjects([id]);
+  return toProject(rows[0], groupsMap.get(id) ?? []);
 }
 
 export async function getProjectsByGroupId(
   groupId: string
 ): Promise<Project[]> {
-  const projects = await getProjects();
-  return projects.filter((p) => p.groupIds.includes(groupId));
+  const db = getDb();
+  const links = await db
+    .select({ projectId: groupProjects.projectId })
+    .from(groupProjects)
+    .where(eq(groupProjects.groupId, groupId));
+  const ids = links.map((l) => l.projectId);
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(projectsTable)
+    .where(inArray(projectsTable.id, ids));
+  const groupsMap = await groupIdsForProjects(ids);
+  return rows.map((r) => toProject(r, groupsMap.get(r.id) ?? []));
 }
 
 export async function getProjectsForUser(
@@ -82,22 +103,24 @@ function ensureUniqueProjectSlug(
   return `${baseSlug}-${n}`;
 }
 
+async function getAllProjectIds(): Promise<string[]> {
+  const rows = await getDb()
+    .select({ id: projectsTable.id })
+    .from(projectsTable);
+  return rows.map((r) => r.id);
+}
+
 export async function createProject(
   name: string,
   description: string,
   createdBy: string,
   groupIds: string[] = []
 ): Promise<Project> {
-  const projects = await getProjects();
-  const existingIds = projects.map((p) => p.id);
+  const db = getDb();
+  const existingIds = await getAllProjectIds();
   const baseSlug = projectSlugFromName(name, description) || generateId('proj');
   const id = ensureUniqueProjectSlug(existingIds, baseSlug);
   const now = formatDate(new Date());
-
-  const projectDir = path.join(UPLOADS_DIR, id);
-  await ensureDir(projectDir);
-  await ensureDir(path.join(projectDir, 'panoramas'));
-  await ensureDir(path.join(projectDir, 'thumbnails'));
 
   const defaultConfig: ProjectConfig = {
     version: '1.0',
@@ -123,15 +146,28 @@ export async function createProject(
     },
   };
 
-  const configPath = path.join(projectDir, 'config.json');
-  await fs.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
-
-  const newProject: Project = {
+  await db.insert(projectsTable).values({
     id,
     name,
     description,
     thumbnailUrl: '',
-    configPath: `/uploads/projects/${id}/config.json`,
+    createdAt: now,
+    updatedAt: now,
+    createdBy,
+    isPublished: false,
+    panoramaCount: 0,
+    config: defaultConfig,
+  });
+  if (groupIds.length > 0) {
+    await setProjectGroupIds(id, groupIds);
+  }
+
+  return {
+    id,
+    name,
+    description,
+    thumbnailUrl: '',
+    configPath: configPathFor(id),
     createdAt: now,
     updatedAt: now,
     createdBy,
@@ -139,12 +175,6 @@ export async function createProject(
     isPublished: false,
     panoramaCount: 0,
   };
-
-  projects.push(newProject);
-  await writeJsonFile<ProjectsData>(PROJECTS_FILE, { projects });
-
-  await syncGroupsProjectIdsFromProjects();
-  return newProject;
 }
 
 export interface CloneProjectOptions {
@@ -158,6 +188,7 @@ export async function cloneProject(
   id: string,
   options: CloneProjectOptions
 ): Promise<Project> {
+  const db = getDb();
   const original = await getProjectById(id);
   if (!original) {
     throw new Error('Project not found');
@@ -180,19 +211,12 @@ export async function cloneProject(
     options.description?.trim() ?? original.description ?? '';
   const description = descriptionBase.slice(0, 1000);
 
-  const projects = await getProjects();
-  const existingIds = projects.map((p) => p.id);
-  const baseSlug =
-    projectSlugFromName(name, description) || generateId('proj');
+  const existingIds = await getAllProjectIds();
+  const baseSlug = projectSlugFromName(name, description) || generateId('proj');
   const newId = ensureUniqueProjectSlug(existingIds, baseSlug);
 
-  await ensureDir(UPLOADS_DIR);
-  const sourceDir = path.join(UPLOADS_DIR, id);
-  const destinationDir = path.join(UPLOADS_DIR, newId);
-  if (existsSync(destinationDir)) {
-    throw new Error('Destination already exists');
-  }
-  await fs.cp(sourceDir, destinationDir, { recursive: true });
+  // Kopiowanie wszystkich plików projektu w Blob (panoramy, miniatury)
+  await copyPrefix(projectPrefix(id), projectPrefix(newId));
 
   const now = formatDate(new Date());
   const updatedConfig: ProjectConfig = {
@@ -203,11 +227,6 @@ export async function cloneProject(
     updatedAt: now,
   };
   const validatedConfig = projectConfigSchema.parse(updatedConfig);
-  await fs.writeFile(
-    path.join(destinationDir, 'config.json'),
-    JSON.stringify(validatedConfig, null, 2),
-    'utf-8'
-  );
 
   let thumbnailUrl = '';
   if (
@@ -217,24 +236,37 @@ export async function cloneProject(
     thumbnailUrl = `/uploads/projects/${newId}/thumbnails/${validatedConfig.panoramas[0].thumbnail}`;
   }
 
-  const newProject: Project = {
+  await db.insert(projectsTable).values({
     id: newId,
     name,
     description,
     thumbnailUrl,
-    configPath: `/uploads/projects/${newId}/config.json`,
     createdAt: now,
     updatedAt: now,
     createdBy: options.createdBy,
-    groupIds: options.groupIds ?? original.groupIds,
+    isPublished: false,
+    panoramaCount: validatedConfig.panoramas.length,
+    config: validatedConfig,
+  });
+
+  const groupIds = options.groupIds ?? original.groupIds;
+  if (groupIds.length > 0) {
+    await setProjectGroupIds(newId, groupIds);
+  }
+
+  return {
+    id: newId,
+    name,
+    description,
+    thumbnailUrl,
+    configPath: configPathFor(newId),
+    createdAt: now,
+    updatedAt: now,
+    createdBy: options.createdBy,
+    groupIds,
     isPublished: false,
     panoramaCount: validatedConfig.panoramas.length,
   };
-
-  projects.push(newProject);
-  await writeJsonFile<ProjectsData>(PROJECTS_FILE, { projects });
-  await syncGroupsProjectIdsFromProjects();
-  return newProject;
 }
 
 export async function updateProject(
@@ -242,23 +274,35 @@ export async function updateProject(
   updates: Partial<Omit<Project, 'id' | 'createdAt' | 'createdBy'>>,
   options?: { skipGroupSync?: boolean }
 ): Promise<Project | null> {
-  const projects = await getProjects();
-  const index = projects.findIndex((p) => p.id === id);
+  void options; // relacja grupa-projekt ma jedno źródło prawdy – sync nie jest potrzebny
+  const db = getDb();
+  const { groupIds, ...fields } = updates;
 
-  if (index === -1) return null;
-
-  projects[index] = {
-    ...projects[index],
-    ...updates,
+  const columnUpdates: Partial<ProjectRow> = {
     updatedAt: formatDate(new Date()),
   };
+  if (fields.name !== undefined) columnUpdates.name = fields.name;
+  if (fields.description !== undefined)
+    columnUpdates.description = fields.description;
+  if (fields.thumbnailUrl !== undefined)
+    columnUpdates.thumbnailUrl = fields.thumbnailUrl;
+  if (fields.isPublished !== undefined)
+    columnUpdates.isPublished = fields.isPublished;
+  if (fields.panoramaCount !== undefined)
+    columnUpdates.panoramaCount = fields.panoramaCount;
 
-  await writeJsonFile<ProjectsData>(PROJECTS_FILE, { projects });
+  const updated = await db
+    .update(projectsTable)
+    .set(columnUpdates)
+    .where(eq(projectsTable.id, id))
+    .returning();
+  if (updated.length === 0) return null;
 
-  if (updates.groupIds !== undefined && !options?.skipGroupSync) {
-    await syncGroupsProjectIdsFromProjects();
+  if (groupIds !== undefined) {
+    await setProjectGroupIds(id, groupIds);
   }
-  return projects[index];
+
+  return getProjectById(id);
 }
 
 export async function renameProjectAndId(
@@ -266,88 +310,110 @@ export async function renameProjectAndId(
   newName: string,
   newDescription: string
 ): Promise<Project | null> {
-  const projects = await getProjects();
-  const index = projects.findIndex((p) => p.id === oldId);
+  const db = getDb();
+  const original = await getProjectById(oldId);
+  if (!original) return null;
 
-  if (index === -1) return null;
-
-  const original = projects[index];
-
-  const existingIds = projects.flatMap((p) => (p.id !== oldId ? [p.id] : []));
-  const baseSlug = projectSlugFromName(newName, newDescription) || generateId('proj');
+  const existingIds = (await getAllProjectIds()).filter((i) => i !== oldId);
+  const baseSlug =
+    projectSlugFromName(newName, newDescription) || generateId('proj');
   const newId = ensureUniqueProjectSlug(existingIds, baseSlug);
 
   if (newId === oldId) return original;
 
-  await ensureDir(UPLOADS_DIR);
-  const sourceDir = path.join(UPLOADS_DIR, oldId);
-  const destinationDir = path.join(UPLOADS_DIR, newId);
+  const rows = await db
+    .select()
+    .from(projectsTable)
+    .where(eq(projectsTable.id, oldId))
+    .limit(1);
+  if (rows.length === 0) return null;
+  const row = rows[0];
 
-  if (existsSync(sourceDir)) {
-    if (existsSync(destinationDir)) {
-      throw new Error('Destination already exists');
-    }
-    await fs.rename(sourceDir, destinationDir);
-  } else {
-    await ensureDir(destinationDir);
-  }
+  // Przeniesienie plików w Blob (kopiowanie + usunięcie starego prefiksu)
+  await copyPrefix(projectPrefix(oldId), projectPrefix(newId));
 
   const now = formatDate(new Date());
 
-  let newThumbnailUrl = original.thumbnailUrl;
+  let newThumbnailUrl = row.thumbnailUrl;
   if (newThumbnailUrl?.includes(`/uploads/projects/${oldId}/`)) {
-    newThumbnailUrl = newThumbnailUrl.replace(`/uploads/projects/${oldId}/`, `/uploads/projects/${newId}/`);
+    newThumbnailUrl = newThumbnailUrl.replace(
+      `/uploads/projects/${oldId}/`,
+      `/uploads/projects/${newId}/`
+    );
   }
 
-  projects[index] = {
-    ...original,
-    id: newId,
-    name: newName,
-    description: newDescription || original.description,
-    configPath: `/uploads/projects/${newId}/config.json`,
-    thumbnailUrl: newThumbnailUrl,
+  const description = newDescription || row.description;
+  const newConfig: ProjectConfig = {
+    ...row.config,
+    projectName: newName,
+    description,
     updatedAt: now,
   };
 
-  await writeJsonFile<ProjectsData>(PROJECTS_FILE, { projects });
-  await syncGroupsProjectIdsFromProjects();
+  // Zmiana PK: nowy wiersz + przepięcie referencji + usunięcie starego
+  await db.insert(projectsTable).values({
+    id: newId,
+    name: newName,
+    description,
+    thumbnailUrl: newThumbnailUrl,
+    createdAt: row.createdAt,
+    updatedAt: now,
+    createdBy: row.createdBy,
+    isPublished: row.isPublished,
+    panoramaCount: row.panoramaCount,
+    config: newConfig,
+  });
+  await db
+    .update(groupProjects)
+    .set({ projectId: newId })
+    .where(eq(groupProjects.projectId, oldId));
+  await db
+    .update(shareLinks)
+    .set({ projectId: newId })
+    .where(eq(shareLinks.projectId, oldId));
+  await db.delete(projectsTable).where(eq(projectsTable.id, oldId));
 
-  return projects[index];
+  await deletePrefix(projectPrefix(oldId));
+
+  return getProjectById(newId);
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-  const projects = await getProjects();
-  const index = projects.findIndex((p) => p.id === id);
+  const db = getDb();
+  // group_projects i share_links znikają przez ON DELETE CASCADE
+  const deleted = await db
+    .delete(projectsTable)
+    .where(eq(projectsTable.id, id))
+    .returning({ id: projectsTable.id });
+  if (deleted.length === 0) return false;
 
-  if (index === -1) return false;
-
-  const projectDir = path.join(UPLOADS_DIR, id);
-  if (existsSync(projectDir)) {
-    await deleteDir(projectDir);
-  }
-
-  projects.splice(index, 1);
-  await writeJsonFile<ProjectsData>(PROJECTS_FILE, { projects });
-
-  await syncGroupsProjectIdsFromProjects();
-  await deleteShareLink(id);
+  await deletePrefix(projectPrefix(id));
   return true;
 }
 
 export async function getProjectConfig(
   id: string
 ): Promise<ProjectConfig | null> {
-  const configPath = path.join(UPLOADS_DIR, id, 'config.json');
+  const db = getDb();
+  const rows = await db
+    .select({ config: projectsTable.config })
+    .from(projectsTable)
+    .where(eq(projectsTable.id, id))
+    .limit(1);
+  if (rows.length === 0) return null;
+
   try {
-    const content = await fs.readFile(configPath, 'utf-8');
-    const config = projectConfigSchema.parse(JSON.parse(content));
+    const config = projectConfigSchema.parse(rows[0].config);
 
     // Auto-migration: dla starszych projektów generuje brakujące warianty,
     // gdy optymalizacja jest włączona.
     const ensured = await ensurePanoramaVariantsForProject(id, config);
     if (ensured.changed) {
       ensured.config.updatedAt = formatDate(new Date());
-      await fs.writeFile(configPath, JSON.stringify(ensured.config, null, 2));
+      await db
+        .update(projectsTable)
+        .set({ config: ensured.config })
+        .where(eq(projectsTable.id, id));
       return ensured.config;
     }
 
@@ -361,11 +427,10 @@ export async function updateProjectConfig(
   id: string,
   config: ProjectConfig
 ): Promise<boolean> {
-  const configPath = path.join(UPLOADS_DIR, id, 'config.json');
+  const db = getDb();
   try {
     const validated = projectConfigSchema.parse(config);
     validated.updatedAt = formatDate(new Date());
-    await fs.writeFile(configPath, JSON.stringify(validated, null, 2));
 
     // Set project thumbnail to first panorama's thumbnail
     let thumbnailUrl = '';
@@ -373,52 +438,35 @@ export async function updateProjectConfig(
       thumbnailUrl = `/uploads/projects/${id}/thumbnails/${validated.panoramas[0].thumbnail}`;
     }
 
-    await updateProject(id, {
-      name: validated.projectName,
-      description: validated.description,
-      panoramaCount: validated.panoramas.length,
-      thumbnailUrl,
-    });
+    const updated = await db
+      .update(projectsTable)
+      .set({
+        config: validated,
+        name: validated.projectName,
+        description: validated.description,
+        panoramaCount: validated.panoramas.length,
+        thumbnailUrl,
+        updatedAt: validated.updatedAt,
+      })
+      .where(eq(projectsTable.id, id))
+      .returning({ id: projectsTable.id });
 
-    return true;
+    return updated.length > 0;
   } catch {
     return false;
   }
 }
 
 /**
- * Zwraca rozmiar katalogu projektu na dysku (w bajtach).
- * Zwraca 0, jeśli katalog nie istnieje lub wystąpi błąd.
- * ZOPTYMALIZOWANE: równoległe wywołania fs.stat
+ * Zwraca łączny rozmiar plików projektu w Blob (w bajtach).
+ * Zwraca 0, jeśli projekt nie ma plików lub wystąpi błąd.
  */
 export async function getProjectSize(id: string): Promise<number> {
-  const projectDir = path.join(UPLOADS_DIR, id);
   try {
-    return await getDirSizeParallel(projectDir);
+    return await prefixSize(projectPrefix(id));
   } catch {
     return 0;
   }
-}
-
-async function getDirSizeParallel(dirPath: string): Promise<number> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-
-  const sizes = await Promise.all(
-    entries.map(async (entry) => {
-      const fullPath = path.join(dirPath, entry.name);
-      try {
-        if (entry.isDirectory()) {
-          return await getDirSizeParallel(fullPath);
-        }
-        const stat = await fs.stat(fullPath);
-        return stat.size;
-      } catch {
-        return 0;
-      }
-    })
-  );
-
-  return sizes.reduce((a, b) => a + b, 0);
 }
 
 export interface RebuildProjectsResult {
@@ -429,94 +477,56 @@ export interface RebuildProjectsResult {
 }
 
 /**
- * Przebudowuje globalną listę projektów na podstawie folderów w uploads/projects/.
- * - Tylko foldery na dysku = wpisy w liście (usuwa stare/orphaned wpisy).
- * - Dla każdego folderu synchronizuje name, description, panoramaCount, thumbnailUrl z config.json.
- * - Dla folderów bez wpisu w projects.json tworzy nowy wpis.
- * Po zapisie wywołuje syncGroupsProjectIdsFromProjects().
+ * Przelicza zdenormalizowane pola projektów (name, description, panoramaCount,
+ * thumbnailUrl) na podstawie kolumny config. Baza jest źródłem prawdy –
+ * nie ma już skanowania folderów na dysku.
  */
 export async function rebuildProjects(): Promise<RebuildProjectsResult> {
-  let dirIds: string[];
-  try {
-    const entries = await fs.readdir(UPLOADS_DIR, { withFileTypes: true });
-    dirIds = entries.flatMap((e) => (e.isDirectory() ? [e.name] : []));
-  } catch {
-    dirIds = [];
-  }
-
-  const currentProjects = await getProjects();
-  const byId = new Map(currentProjects.map((p) => [p.id, p]));
-
-  const newProjects: Project[] = [];
+  const db = getDb();
+  const rows = await db.select().from(projectsTable);
   let updated = 0;
-  let added = 0;
 
-  for (const id of dirIds) {
-    const config = await getProjectConfig(id);
-    const name = config?.projectName ?? id;
+  for (const row of rows) {
+    const config = row.config;
+    const name = config?.projectName ?? row.id;
     const description = config?.description ?? '';
     const panoramaCount = config?.panoramas?.length ?? 0;
     let thumbnailUrl = '';
     if (config?.panoramas?.length && config.panoramas[0].thumbnail) {
-      thumbnailUrl = `/uploads/projects/${id}/thumbnails/${config.panoramas[0].thumbnail}`;
+      thumbnailUrl = `/uploads/projects/${row.id}/thumbnails/${config.panoramas[0].thumbnail}`;
     }
-    const configPath = `/uploads/projects/${id}/config.json`;
-    const now = formatDate(new Date());
 
-    const existing = byId.get(id);
-    if (existing) {
-      const customThumbPath = `/uploads/projects/${id}/thumbnails/thumb.webp`;
-      const keepCustomThumb =
-        existing.thumbnailUrl === customThumbPath &&
-        existsSync(path.join(UPLOADS_DIR, id, 'thumbnails', 'thumb.webp'));
-      const finalThumbnailUrl = keepCustomThumb
-        ? existing.thumbnailUrl
-        : thumbnailUrl;
+    // Zachowaj ręcznie ustawioną miniaturę projektu (thumb.webp)
+    const customThumbPath = `/uploads/projects/${row.id}/thumbnails/thumb.webp`;
+    const finalThumbnailUrl =
+      row.thumbnailUrl === customThumbPath ? row.thumbnailUrl : thumbnailUrl;
 
-      const changed =
-        existing.name !== name ||
-        existing.description !== description ||
-        existing.panoramaCount !== panoramaCount ||
-        existing.thumbnailUrl !== finalThumbnailUrl;
+    const changed =
+      row.name !== name ||
+      row.description !== description ||
+      row.panoramaCount !== panoramaCount ||
+      row.thumbnailUrl !== finalThumbnailUrl;
 
-      newProjects.push({
-        ...existing,
-        name,
-        description,
-        panoramaCount,
-        thumbnailUrl: finalThumbnailUrl,
-        configPath,
-        updatedAt: now,
-      });
-      if (changed) updated++;
-    } else {
-      newProjects.push({
-        id,
-        name,
-        description,
-        thumbnailUrl,
-        configPath,
-        createdAt: config?.createdAt ?? now,
-        updatedAt: now,
-        createdBy: 'system',
-        groupIds: [],
-        isPublished: false,
-        panoramaCount,
-      });
-      added++;
+    if (changed) {
+      await db
+        .update(projectsTable)
+        .set({
+          name,
+          description,
+          panoramaCount,
+          thumbnailUrl: finalThumbnailUrl,
+          updatedAt: formatDate(new Date()),
+        })
+        .where(eq(projectsTable.id, row.id));
+      updated++;
     }
   }
 
-  const dirIdSet = new Set(dirIds);
-  const removed = currentProjects.filter((p) => !dirIdSet.has(p.id)).length;
-
-  await writeJsonFile<ProjectsData>(PROJECTS_FILE, { projects: newProjects });
-  await syncGroupsProjectIdsFromProjects();
-
+  const projects = await getProjects();
   return {
     updated,
-    removed,
-    added,
-    projects: newProjects,
+    removed: 0,
+    added: 0,
+    projects,
   };
 }

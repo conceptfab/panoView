@@ -1,8 +1,7 @@
 // oxlint-disable react-doctor/async-parallel react-doctor/async-await-in-loop react-doctor/js-set-map-lookups
-import { promises as fs } from 'fs';
-import path from 'path';
 import sharp from 'sharp';
 import { NextRequest, NextResponse } from 'next/server';
+import { del } from '@vercel/blob';
 import {
   getProjectById,
   getProjectConfig,
@@ -14,40 +13,33 @@ import {
 } from '@/lib/auth/session';
 import { getUserById } from '@/lib/db/users';
 import { ensurePanoramaVariantsForProject } from '@/lib/panorama-variants-server';
-import { getDataRoot } from '@/lib/data-root';
-import { ensureDir } from '@/lib/db/json-store';
+import {
+  panoramaKey,
+  thumbnailKey,
+  projectPrefix,
+  putBlob,
+  moveBlob,
+  downloadBlobFromUrl,
+} from '@/lib/storage/blob';
+import {
+  isTrustedTmpUploadUrl,
+  ASPECT_RATIO_MIN,
+  ASPECT_RATIO_MAX,
+} from '@/lib/storage/panorama-processing';
 
-const ALLOWED_TYPES = ['image/webp', 'image/jpeg', 'image/png'];
-const MAX_FILE_SIZE = 60 * 1024 * 1024; // 60 MB
-const ASPECT_RATIO_MIN = 1.8;
-const ASPECT_RATIO_MAX = 2.2;
-
-async function ensureDirSafe(dir: string) {
-  try {
-    await fs.access(dir);
-  } catch {
-    await fs.mkdir(dir, { recursive: true });
-  }
-}
-
-async function moveFileIfExists(
-  sourceDir: string,
-  relativePath: string,
-  destDir: string
-) {
-  const src = path.join(sourceDir, relativePath);
-  const dest = path.join(destDir, relativePath);
-  try {
-    await fs.access(src);
-    await ensureDirSafe(path.dirname(dest));
-    await fs.rename(src, dest);
-  } catch {
-    // Ignore missing files
-  }
-}
+export const maxDuration = 300;
 
 interface RouteParams {
   params: Promise<{ id: string }>;
+}
+
+interface ReplaceRequestBody {
+  replacements?: {
+    panoramaId?: string;
+    url?: string;
+    name?: string;
+    contentType?: string;
+  }[];
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -69,14 +61,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const formData = await request.formData();
-    const replacements: { panoramaId: string; file: File }[] = [];
-
-    for (const [key, value] of formData.entries()) {
-      if (!key.startsWith('panorama:')) continue;
-      if (!(value instanceof File)) continue;
-      replacements.push({ panoramaId: key.split(':')[1], file: value });
-    }
+    const body = (await request.json()) as ReplaceRequestBody;
+    const replacements = (body.replacements ?? []).filter(
+      (r) => r.panoramaId && r.url
+    );
 
     if (replacements.length === 0) {
       return NextResponse.json(
@@ -91,19 +79,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const panoramasById = new Map(config.panoramas.map((p) => [p.id, p]));
-    const root = getDataRoot();
-    const projectDir = path.join(root, 'uploads', 'projects', projectId);
-    const panoramasDir = path.join(projectDir, 'panoramas');
-    const thumbnailsDir = path.join(projectDir, 'thumbnails');
-    await ensureDir(panoramasDir);
-    await ensureDir(thumbnailsDir);
-
-    const pendingRoot = path.join(projectDir, 'pending-panoramas');
-    await ensureDir(pendingRoot);
+    const pendingPrefix = `${projectPrefix(projectId)}/pending-panoramas`;
 
     const replaced: string[] = [];
 
-    for (const { panoramaId, file } of replacements) {
+    for (const replacement of replacements) {
+      const panoramaId = replacement.panoramaId!;
+      const name = replacement.name || panoramaId;
+
       const panorama = panoramasById.get(panoramaId);
       if (!panorama) {
         return NextResponse.json(
@@ -112,25 +95,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      if (!ALLOWED_TYPES.includes(file.type)) {
+      if (!isTrustedTmpUploadUrl(replacement.url!)) {
         return NextResponse.json(
-          { error: `Nieobsługiwany format: ${file.name}` },
-          { status: 415 }
+          { error: `Nieprawidłowy adres pliku: ${name}` },
+          { status: 400 }
         );
       }
 
-      if (file.size > MAX_FILE_SIZE) {
+      const buffer = await downloadBlobFromUrl(replacement.url!);
+      if (!buffer) {
         return NextResponse.json(
-          { error: `${file.name} przekracza limit ${MAX_FILE_SIZE / 1024 / 1024}MB` },
-          { status: 413 }
+          { error: `Nie udało się pobrać pliku: ${name}` },
+          { status: 400 }
         );
       }
 
-      const buffer = Buffer.from(await file.arrayBuffer());
       const metadata = await sharp(buffer).metadata();
       if (!metadata.width || !metadata.height) {
         return NextResponse.json(
-          { error: `Nie można odczytać rozmiaru obrazu: ${file.name}` },
+          { error: `Nie można odczytać rozmiaru obrazu: ${name}` },
           { status: 400 }
         );
       }
@@ -138,27 +121,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const ratio = metadata.width / metadata.height;
       if (ratio < ASPECT_RATIO_MIN || ratio > ASPECT_RATIO_MAX) {
         return NextResponse.json(
-          {
-            error: `${file.name} nie ma proporcji 2:1 (${ratio.toFixed(2)}).`,
-          },
+          { error: `${name} nie ma proporcji 2:1 (${ratio.toFixed(2)}).` },
           { status: 400 }
         );
       }
 
-      const pendingSlot = path.join(
-        pendingRoot,
-        `${panorama.id}-${Date.now()}-${Math.round(Math.random() * 1000)}`
-      );
-      const pendingPanoramas = path.join(pendingSlot, 'panoramas');
-      const pendingThumbnails = path.join(pendingSlot, 'thumbnails');
-      await ensureDir(pendingPanoramas);
-      await ensureDir(pendingThumbnails);
+      // Stare pliki przenosimy do "poczekalni" w Blob
+      const pendingSlot = `${pendingPrefix}/${panorama.id}-${Date.now()}-${Math.round(Math.random() * 1000)}`;
 
       const moved = new Set<string>();
       const moveVariant = async (relative: string) => {
         if (!relative || moved.has(relative)) return;
         moved.add(relative);
-        await moveFileIfExists(panoramasDir, relative, pendingPanoramas);
+        await moveBlob(
+          panoramaKey(projectId, relative),
+          `${pendingSlot}/panoramas/${relative}`
+        );
       };
 
       await moveVariant(panorama.file);
@@ -167,21 +145,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
 
       if (panorama.thumbnail) {
-        await moveFileIfExists(
-          thumbnailsDir,
-          panorama.thumbnail,
-          pendingThumbnails
+        await moveBlob(
+          thumbnailKey(projectId, panorama.thumbnail),
+          `${pendingSlot}/thumbnails/${panorama.thumbnail}`
         );
       }
 
-      const masterPath = path.join(panoramasDir, panorama.file);
-      await sharp(buffer).webp({ quality: 85 }).toFile(masterPath);
+      // Nowy master pod tą samą nazwą pliku
+      const masterBuffer = await sharp(buffer)
+        .webp({ quality: 85 })
+        .toBuffer();
+      await putBlob(panoramaKey(projectId, panorama.file), masterBuffer, {
+        contentType: 'image/webp',
+      });
 
       const thumbFilename = `thumb_${panorama.id}.webp`;
-      await sharp(buffer)
+      const thumbBuffer = await sharp(buffer)
         .resize(800, 400, { fit: 'cover' })
         .webp({ quality: 80 })
-        .toFile(path.join(thumbnailsDir, thumbFilename));
+        .toBuffer();
+      await putBlob(thumbnailKey(projectId, thumbFilename), thumbBuffer, {
+        contentType: 'image/webp',
+      });
+
+      // Sprzątanie pliku tymczasowego
+      await del(replacement.url!).catch(() => {});
 
       panorama.thumbnail = thumbFilename;
       panorama.variants = [];
@@ -197,7 +185,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       message: `Zastąpiono ${replaced.length} panoramę/panorama: ${replaced.join(
         ', '
       )}.`,
-      pendingDir: pendingRoot,
+      pendingDir: pendingPrefix,
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Forbidden')) {

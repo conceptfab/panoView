@@ -9,12 +9,14 @@
     "dev": "next dev --webpack",
     "dev:turbo": "next dev --turbo",
     "build": "next build",
-    "start": "node scripts/init-data.js && next start",
-    "start:prod": "next start",
-    "init-data": "node scripts/init-data.js",
+    "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "db:push": "dotenv -e .env.local -- drizzle-kit push",
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
+    "db:seed": "dotenv -e .env.local -- tsx scripts/seed.ts",
+    "db:migrate-data": "dotenv -e .env.local -- tsx scripts/migrate-to-vercel.ts",
     "check-deploy": "node scripts/check-deploy.js",
     "release": "node scripts/release.js"
   },
@@ -42,6 +44,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.2",
     "@tailwindcss/postcss": "^4",
     "@types/archiver": "^7.0.0",
     "@types/node": "^20",

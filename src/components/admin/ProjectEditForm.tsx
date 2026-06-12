@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Group, Project, ProjectConfig } from '@/types';
+import { uploadReplacementFiles } from '@/lib/upload-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -180,17 +181,15 @@ export function ProjectEditForm({
     setReplaceError(null);
     setReplaceMessage(null);
 
-    const formData = new FormData();
-    Object.entries(replaceFiles).forEach(([panoramaId, file]) => {
-      if (file) {
-        formData.append(`panorama:${panoramaId}`, file);
-      }
-    });
-
     try {
+      const replacements = await uploadReplacementFiles(
+        project.id,
+        replaceFiles
+      );
       const res = await fetch(`/api/projects/${project.id}/replace-panoramas`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replacements }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

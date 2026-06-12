@@ -1,29 +1,33 @@
-import path from 'path';
-import { getDataRoot } from '@/lib/data-root';
-
 export type ShareAssetPathResult =
-  | { valid: true; filePath: string }
+  | { valid: true; blobKey: string }
   | { valid: false };
 
 export function buildShareAssetBasePath(token: string): string {
   return `/api/p/${encodeURIComponent(token)}/assets`;
 }
 
+/**
+ * Mapuje segmenty ścieżki assetu share linku na klucz w Vercel Blob
+ * (projects/{projectId}/...). Odrzuca path traversal i puste segmenty.
+ */
 export function resolveShareAssetPath(
   projectId: string,
   pathSegments: string[]
 ): ShareAssetPathResult {
-  const projectRoot = path.join(getDataRoot(), 'uploads', 'projects', projectId);
-  const filePath = path.join(projectRoot, ...pathSegments);
-  const resolvedPath = path.resolve(filePath);
-  const resolvedProjectRoot = path.resolve(projectRoot);
-
-  if (
-    resolvedPath !== resolvedProjectRoot &&
-    !resolvedPath.startsWith(resolvedProjectRoot + path.sep)
-  ) {
-    return { valid: false };
+  if (pathSegments.length === 0) return { valid: false };
+  for (const segment of pathSegments) {
+    if (
+      !segment ||
+      segment === '.' ||
+      segment === '..' ||
+      segment.includes('/') ||
+      segment.includes('\\')
+    ) {
+      return { valid: false };
+    }
   }
-
-  return { valid: true, filePath };
+  return {
+    valid: true,
+    blobKey: `projects/${projectId}/${pathSegments.join('/')}`,
+  };
 }

@@ -11,7 +11,7 @@ describe('share assets', () => {
     );
   });
 
-  it('resolves project asset paths under the linked project directory', () => {
+  it('resolves project asset paths to a blob key under the linked project', () => {
     const resolved = resolveShareAssetPath('project-1', [
       'panoramas',
       'pano.webp',
@@ -19,9 +19,7 @@ describe('share assets', () => {
 
     expect(resolved.valid).toBe(true);
     if (resolved.valid) {
-      expect(resolved.filePath).toContain(
-        'uploads/projects/project-1/panoramas/pano.webp'
-      );
+      expect(resolved.blobKey).toBe('projects/project-1/panoramas/pano.webp');
     }
   });
 
@@ -34,5 +32,9 @@ describe('share assets', () => {
     ]);
 
     expect(resolved.valid).toBe(false);
+  });
+
+  it('rejects empty segment lists', () => {
+    expect(resolveShareAssetPath('project-1', []).valid).toBe(false);
   });
 });

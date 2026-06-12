@@ -3,6 +3,7 @@
 // oxlint-disable react-doctor/no-giant-component react-doctor/prefer-useReducer
 
 import { useState } from 'react';
+import { upload } from '@vercel/blob/client';
 import { useRouter } from 'next/navigation';
 import { Project } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,14 +64,24 @@ export function FileManager({ projects }: FileManagerProps) {
     }
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      if (importName.trim()) formData.append('name', importName.trim());
-      if (importDescription.trim())
-        formData.append('description', importDescription.trim());
+      // Direct upload ZIP do Vercel Blob (omija limit 4.5MB requestu)
+      const blob = await upload(
+        `tmp/uploads/import/${uploadFile.name}`,
+        uploadFile,
+        {
+          access: 'public',
+          handleUploadUrl: '/api/upload',
+          clientPayload: JSON.stringify({ purpose: 'import' }),
+        }
+      );
       const res = await fetch('/api/files/upload-project', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: blob.url,
+          name: importName.trim() || undefined,
+          description: importDescription.trim() || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -231,7 +242,7 @@ export function FileManager({ projects }: FileManagerProps) {
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-medium">Przebuduj projekty</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Zsynchronizuj listę z folderami na dysku.
+                    Przelicz metadane projektów z ich konfiguracji.
                   </p>
                   <Button
                     variant="ghost"

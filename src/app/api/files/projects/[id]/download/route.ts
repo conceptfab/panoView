@@ -1,12 +1,12 @@
+// oxlint-disable react-doctor/async-await-in-loop
 import { NextRequest, NextResponse } from 'next/server';
 import archiver from 'archiver';
-import path from 'path';
-import { PassThrough } from 'stream';
-import { Readable } from 'stream';
+import { PassThrough, Readable } from 'stream';
 import { requireAdmin } from '@/lib/auth/session';
-import { getProjectById } from '@/lib/db/projects';
-import { getDataRoot } from '@/lib/data-root';
-import { existsSync } from 'fs';
+import { getProjectById, getProjectConfig } from '@/lib/db/projects';
+import { projectPrefix, listBlobs } from '@/lib/storage/blob';
+
+export const maxDuration = 300;
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -21,14 +21,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    const root = getDataRoot();
-    const projectDir = path.join(root, 'uploads', 'projects', id);
-    if (!existsSync(projectDir)) {
-      return NextResponse.json(
-        { error: 'Project files not found' },
-        { status: 404 }
-      );
-    }
+    const config = await getProjectConfig(id);
+    const prefix = projectPrefix(id);
+    const blobs = await listBlobs(prefix);
 
     const archive = archiver('zip', { zlib: { level: 9 } });
     const passThrough = new PassThrough();
@@ -36,9 +31,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const safeName =
       project.name.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-') || id;
-    archive.directory(projectDir, false);
 
-    archive.finalize();
+    // config.json z bazy (dawniej plik na dysku)
+    if (config) {
+      archive.append(JSON.stringify(config, null, 2), { name: 'config.json' });
+    }
+
+    // Pliki projektu z Blob – strumieniowane do archiwum
+    void (async () => {
+      try {
+        for (const blob of blobs) {
+          const relative = blob.pathname.slice(prefix.length + 1);
+          if (!relative || relative === 'config.json') continue;
+          const res = await fetch(blob.url);
+          if (!res.ok || !res.body) continue;
+          archive.append(Readable.fromWeb(res.body as never), {
+            name: relative,
+          });
+        }
+        await archive.finalize();
+      } catch (err) {
+        archive.destroy(err as Error);
+      }
+    })();
 
     const webStream = Readable.toWeb(passThrough) as ReadableStream;
     return new NextResponse(webStream, {

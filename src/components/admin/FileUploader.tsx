@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { upload } from '@vercel/blob/client';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -95,12 +96,6 @@ export function FileUploader({ projectId }: FileUploaderProps) {
 
     setIsUploading(true);
 
-    const formData = new FormData();
-    formData.append('projectId', projectId);
-    pendingFiles.forEach((f) => {
-      formData.append('files', f.file);
-    });
-
     // Update status to uploading
     setFiles((prev) =>
       prev.map((f) =>
@@ -109,9 +104,30 @@ export function FileUploader({ projectId }: FileUploaderProps) {
     );
 
     try {
-      const res = await fetch('/api/upload', {
+      // 1. Direct upload do Vercel Blob (omija limit 4.5MB requestu)
+      const uploaded: { url: string; name: string; contentType: string }[] = [];
+      for (const f of pendingFiles) {
+        const blob = await upload(
+          `tmp/uploads/${projectId}/${f.file.name}`,
+          f.file,
+          {
+            access: 'public',
+            handleUploadUrl: '/api/upload',
+            clientPayload: JSON.stringify({ projectId }),
+          }
+        );
+        uploaded.push({
+          url: blob.url,
+          name: f.file.name,
+          contentType: f.file.type,
+        });
+      }
+
+      // 2. Przetworzenie na panoramy (warianty, miniatury, config)
+      const res = await fetch('/api/upload/process', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, files: uploaded }),
       });
 
       if (!res.ok) {
@@ -127,6 +143,11 @@ export function FileUploader({ projectId }: FileUploaderProps) {
         )
       );
 
+      if (data.skipped?.length) {
+        for (const s of data.skipped) {
+          toast.error(`${s.name}: ${s.reason}`);
+        }
+      }
       toast.success(`Przesłano ${data.uploadedFiles.length} plików`);
       refresh();
     } catch {

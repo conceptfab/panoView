@@ -1,54 +1,75 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { GET } from '@/app/api/p/[token]/assets/[...path]/route';
-import { setShareActive } from '@/lib/db/share-links';
-import type { ProjectsData } from '@/types';
+import { createTestDb, type TestDb } from './test-db';
+import { shareLinks, projects } from '@/lib/db/schema';
 
-beforeEach(() => {
-  const root = process.env.PANO_DATA_DIR!;
-  rmSync(path.join(root, 'data', 'share-links.json'), { force: true });
-  rmSync(path.join(root, 'data', 'projects.json'), { force: true });
-  rmSync(path.join(root, 'uploads'), { recursive: true, force: true });
+let testDb: TestDb;
+
+vi.mock('@/lib/db/client', () => ({
+  getDb: () => testDb,
+}));
+
+vi.mock('@/lib/storage/blob', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/storage/blob')>();
+  return {
+    ...original,
+    resolveBlobUrl: vi.fn(async (pathname: string) =>
+      pathname === 'projects/project-1/panoramas/pano.webp'
+        ? `https://test.public.blob.vercel-storage.com/${pathname}`
+        : null
+    ),
+  };
 });
 
-describe('share asset route', () => {
-  it('serves a project panorama for an active published share link without a session', async () => {
-    const root = process.env.PANO_DATA_DIR!;
-    const projectId = 'project-1';
-    const panoramaPath = path.join(
-      root,
-      'uploads',
-      'projects',
-      projectId,
-      'panoramas'
-    );
-    mkdirSync(path.join(root, 'data'), { recursive: true });
-    mkdirSync(panoramaPath, { recursive: true });
-    writeFileSync(path.join(panoramaPath, 'pano.webp'), 'image-bytes');
+const { GET } = await import('@/app/api/p/[token]/assets/[...path]/route');
+const { setShareActive } = await import('@/lib/db/share-links');
 
-    const projects: ProjectsData = {
-      projects: [
-        {
-          id: projectId,
-          name: 'Project 1',
-          description: '',
-          thumbnailUrl: '',
-          configPath: `/uploads/projects/${projectId}/config.json`,
-          createdAt: '2026-05-21T00:00:00.000Z',
-          updatedAt: '2026-05-21T00:00:00.000Z',
-          createdBy: 'admin',
-          groupIds: [],
-          isPublished: true,
-          panoramaCount: 1,
-        },
-      ],
-    };
-    writeFileSync(
-      path.join(root, 'data', 'projects.json'),
-      JSON.stringify(projects)
-    );
+beforeAll(async () => {
+  testDb = await createTestDb();
+});
+
+beforeEach(async () => {
+  await testDb.delete(shareLinks);
+  await testDb.delete(projects);
+});
+
+async function insertProject(id: string, isPublished = true) {
+  await testDb.insert(projects).values({
+    id,
+    name: 'Project 1',
+    description: '',
+    thumbnailUrl: '',
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z',
+    createdBy: 'admin',
+    isPublished,
+    panoramaCount: 1,
+    config: {
+      version: '1.0',
+      projectName: 'Project 1',
+      description: '',
+      createdAt: '2026-05-21T00:00:00.000Z',
+      updatedAt: '2026-05-21T00:00:00.000Z',
+      settings: {
+        autoRotate: true,
+        autoRotateSpeed: 0.5,
+        autoRotateDelay: 30000,
+        cameraFov: 55,
+        optimizePanoramaForScreen: false,
+        controlBar: false,
+        splashDuration: 3000,
+        fadeDuration: 2000,
+      },
+      panoramas: [],
+      metadata: { author: '', client: '', tags: [] },
+    },
+  });
+}
+
+describe('share asset route', () => {
+  it('redirects to the blob URL for an active published share link without a session', async () => {
+    const projectId = 'project-1';
+    await insertProject(projectId);
 
     const link = await setShareActive(projectId, true);
     const response = await GET(
@@ -63,8 +84,51 @@ describe('share asset route', () => {
       }
     );
 
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(
+      'https://test.public.blob.vercel-storage.com/projects/project-1/panoramas/pano.webp'
+    );
+  });
+
+  it('returns 404 for an inactive link', async () => {
+    const projectId = 'project-1';
+    await insertProject(projectId);
+
+    const link = await setShareActive(projectId, false);
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/p/${link.token}/assets/panoramas/pano.webp`
+      ),
+      {
+        params: Promise.resolve({
+          token: link.token,
+          path: ['panoramas', 'pano.webp'],
+        }),
+      }
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it('serves project config from the database', async () => {
+    const projectId = 'project-1';
+    await insertProject(projectId);
+
+    const link = await setShareActive(projectId, true);
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/p/${link.token}/assets/config.json`
+      ),
+      {
+        params: Promise.resolve({
+          token: link.token,
+          path: ['config.json'],
+        }),
+      }
+    );
+
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('image/webp');
-    expect(await response.text()).toBe('image-bytes');
+    const body = await response.json();
+    expect(body.projectName).toBe('Project 1');
   });
 });

@@ -1,24 +1,10 @@
-// oxlint-disable react-doctor/server-hoist-static-io
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { promises as fs } from 'fs';
-import path from 'path';
 import { getShareLinkByToken } from '@/lib/db/share-links';
-import { getProjectById } from '@/lib/db/projects';
+import { getProjectById, getProjectConfig } from '@/lib/db/projects';
 import { verifyShareUnlockToken } from '@/lib/auth/share-unlock';
 import { resolveShareAssetPath } from '@/lib/share-assets';
-
-const MIME_TYPES: Record<string, string> = {
-  '.webp': 'image/webp',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.json': 'application/json',
-};
+import { resolveBlobUrl } from '@/lib/storage/blob';
 
 interface RouteParams {
   params: Promise<{ token: string; path: string[] }>;
@@ -51,23 +37,26 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
     }
 
-    let file: Buffer;
-    try {
-      file = await fs.readFile(resolved.filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    // config.json projektu mieszka w bazie
+    if (resolved.blobKey === `projects/${link.projectId}/config.json`) {
+      const config = await getProjectConfig(link.projectId);
+      if (!config) {
         return NextResponse.json({ error: 'File not found' }, { status: 404 });
       }
-      throw error;
+      return NextResponse.json(config, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
     }
 
-    const ext = path.extname(resolved.filePath).toLowerCase();
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const url = await resolveBlobUrl(resolved.blobKey);
+    if (!url) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
 
-    return new NextResponse(new Uint8Array(file), {
+    return NextResponse.redirect(url, {
+      status: 302,
       headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': 'public, max-age=3600',
       },
     });
   } catch (error) {

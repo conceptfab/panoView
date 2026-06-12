@@ -1,20 +1,14 @@
 // oxlint-disable react-doctor/async-await-in-loop
-import { promises as fs } from 'fs';
-import path from 'path';
 import sharp from 'sharp';
 import type { PanoramaVariant, ProjectConfig } from '@/types';
-import { getDataRoot } from '@/lib/data-root';
+import {
+  panoramaKey,
+  blobExists,
+  downloadBlob,
+  putBlob,
+} from '@/lib/storage/blob';
 
 const PANORAMA_VARIANT_WIDTHS = [2048, 4096, 6144];
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function variantsEqual(a: PanoramaVariant[], b: PanoramaVariant[]): boolean {
   if (a.length !== b.length) return false;
@@ -38,22 +32,15 @@ export async function ensurePanoramaVariantsForProject(
     return { changed: false, generatedFiles: 0, config };
   }
 
-  const panoramasDir = path.join(
-    getDataRoot(),
-    'uploads',
-    'projects',
-    projectId,
-    'panoramas'
-  );
-
   let changed = false;
   let generatedFiles = 0;
 
   for (const panorama of config.panoramas) {
-    const sourcePath = path.join(panoramasDir, panorama.file);
-    if (!(await fileExists(sourcePath))) continue;
+    const sourceKey = panoramaKey(projectId, panorama.file);
+    const sourceBuffer = await downloadBlob(sourceKey);
+    if (!sourceBuffer) continue;
 
-    const metadata = await sharp(sourcePath).metadata();
+    const metadata = await sharp(sourceBuffer).metadata();
     if (!metadata.width || !metadata.height) continue;
 
     const sourceWidth = metadata.width;
@@ -65,10 +52,10 @@ export async function ensurePanoramaVariantsForProject(
     for (const width of PANORAMA_VARIANT_WIDTHS.filter((w) => w < sourceWidth)) {
       const height = Math.max(1, Math.round(width / aspectRatio));
       const variantFile = `${sourceBase}_${width}.webp`;
-      const variantPath = path.join(panoramasDir, variantFile);
+      const variantKey = panoramaKey(projectId, variantFile);
 
-      if (!(await fileExists(variantPath))) {
-        await sharp(sourcePath)
+      if (!(await blobExists(variantKey))) {
+        const variantBuffer = await sharp(sourceBuffer)
           .resize({
             width,
             height,
@@ -76,7 +63,10 @@ export async function ensurePanoramaVariantsForProject(
             withoutEnlargement: true,
           })
           .webp({ quality: width >= 6144 ? 85 : 82 })
-          .toFile(variantPath);
+          .toBuffer();
+        await putBlob(variantKey, variantBuffer, {
+          contentType: 'image/webp',
+        });
         generatedFiles++;
       }
 

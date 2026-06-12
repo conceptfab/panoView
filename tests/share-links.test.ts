@@ -1,19 +1,59 @@
-// oxlint-disable react-doctor/server-sequential-independent-await
-import { describe, it, expect, beforeEach } from 'vitest';
-import { rmSync } from 'node:fs';
-import path from 'node:path';
-import {
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { createTestDb, type TestDb } from './test-db';
+import { shareLinks, projects } from '@/lib/db/schema';
+
+let testDb: TestDb;
+
+vi.mock('@/lib/db/client', () => ({
+  getDb: () => testDb,
+}));
+
+const {
   setShareActive,
   setSharePin,
   getShareLinkByProject,
   getShareLinkByToken,
   deleteShareLink,
-} from '@/lib/db/share-links';
-import { verifyPin } from '@/lib/auth/share-pin';
+} = await import('@/lib/db/share-links');
+const { verifyPin } = await import('@/lib/auth/share-pin');
 
-beforeEach(() => {
-  rmSync(path.join(process.env.PANO_DATA_DIR!, 'data', 'share-links.json'), {
-    force: true,
+beforeAll(async () => {
+  testDb = await createTestDb();
+});
+
+beforeEach(async () => {
+  await testDb.delete(shareLinks);
+  await testDb.delete(projects);
+  // share_links ma FK do projects – wstaw projekt bazowy
+  await testDb.insert(projects).values({
+    id: 'proj-1',
+    name: 'Projekt 1',
+    description: '',
+    thumbnailUrl: '',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'admin',
+    isPublished: true,
+    panoramaCount: 0,
+    config: {
+      version: '1.0',
+      projectName: 'Projekt 1',
+      description: '',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      settings: {
+        autoRotate: true,
+        autoRotateSpeed: 0.5,
+        autoRotateDelay: 30000,
+        cameraFov: 55,
+        optimizePanoramaForScreen: true,
+        controlBar: false,
+        splashDuration: 3000,
+        fadeDuration: 2000,
+      },
+      panoramas: [],
+      metadata: { author: '', client: '', tags: [] },
+    },
   });
 });
 

@@ -4,13 +4,22 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import os from 'os';
 import extract from 'extract-zip';
+import { del } from '@vercel/blob';
 import { requireAdminOrEditor } from '@/lib/auth/session';
 import { createProject, updateProjectConfig } from '@/lib/db/projects';
 import { getUserById } from '@/lib/db/users';
-import { getDataRoot } from '@/lib/data-root';
 import { projectConfigSchema } from '@/utils/validation';
-import { ensureDir } from '@/lib/db/json-store';
+import {
+  panoramaKey,
+  thumbnailKey,
+  putBlob,
+  contentTypeForFile,
+  downloadBlobFromUrl,
+} from '@/lib/storage/blob';
+import { isTrustedTmpUploadUrl } from '@/lib/storage/panorama-processing';
 import type { ProjectConfig } from '@/types';
+
+export const maxDuration = 300;
 
 /**
  * W configu po imporcie: ustawia nową nazwę/opis i zamienia ścieżki projektu na nowy katalog.
@@ -47,25 +56,32 @@ function configForImportedProject(
   };
 }
 
+interface ImportRequestBody {
+  url?: string;
+  name?: string;
+  description?: string;
+}
+
 export async function POST(request: NextRequest) {
   let tempDir: string | null = null;
+  let zipUrl: string | null = null;
 
   try {
     const session = await requireAdminOrEditor();
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const body = (await request.json()) as ImportRequestBody;
 
-    if (!file || !(file instanceof File)) {
+    if (!body.url || !isTrustedTmpUploadUrl(body.url)) {
       return NextResponse.json(
         { error: 'Wybierz plik ZIP z gotowym projektem' },
         { status: 400 }
       );
     }
+    zipUrl = body.url;
 
-    const name = file.name.toLowerCase();
-    if (!name.endsWith('.zip')) {
+    const zipBuffer = await downloadBlobFromUrl(zipUrl);
+    if (!zipBuffer) {
       return NextResponse.json(
-        { error: 'Dozwolony format: plik .zip' },
+        { error: 'Nie udało się pobrać pliku ZIP' },
         { status: 400 }
       );
     }
@@ -74,8 +90,7 @@ export async function POST(request: NextRequest) {
     await fs.mkdir(tempDir, { recursive: true });
 
     const zipPath = path.join(tempDir, 'upload.zip');
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(zipPath, buffer);
+    await fs.writeFile(zipPath, zipBuffer);
 
     await extract(zipPath, { dir: tempDir });
     await fs.unlink(zipPath);
@@ -84,7 +99,6 @@ export async function POST(request: NextRequest) {
     try {
       await fs.access(configPath);
     } catch {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       return NextResponse.json(
         { error: 'W archiwum brakuje pliku config.json w głównym katalogu' },
         { status: 400 }
@@ -96,7 +110,6 @@ export async function POST(request: NextRequest) {
     try {
       config = JSON.parse(configContent);
     } catch {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       return NextResponse.json(
         { error: 'Nieprawidłowy format config.json' },
         { status: 400 }
@@ -105,7 +118,6 @@ export async function POST(request: NextRequest) {
 
     const validated = projectConfigSchema.safeParse(config);
     if (!validated.success) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       return NextResponse.json(
         { error: 'Nieprawidłowa struktura projektu w config.json' },
         { status: 400 }
@@ -119,7 +131,6 @@ export async function POST(request: NextRequest) {
     if (session.role === 'editor') {
       const user = await getUserById(session.userId);
       if (!user || user.groupIds.length === 0) {
-        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
         return NextResponse.json(
           { error: 'Edytor musi być przypisany do co najmniej jednej grupy' },
           { status: 403 }
@@ -128,11 +139,10 @@ export async function POST(request: NextRequest) {
       groupIds = user.groupIds;
     }
 
-    const importName = (formData.get('name') as string | null)?.trim();
+    const importName = body.name?.trim();
     const projectName = importName || projectConfig.projectName;
     const projectDescription =
-      (formData.get('description') as string | null)?.trim() ??
-      projectConfig.description;
+      body.description?.trim() || projectConfig.description;
 
     const project = await createProject(
       projectName,
@@ -141,36 +151,30 @@ export async function POST(request: NextRequest) {
       groupIds
     );
 
-    const root = getDataRoot();
-    const projectDir = path.join(root, 'uploads', 'projects', project.id);
-    const panoramasSrc = path.join(tempDir, 'panoramas');
-    const thumbnailsSrc = path.join(tempDir, 'thumbnails');
-    const panoramasDst = path.join(projectDir, 'panoramas');
-    const thumbnailsDst = path.join(projectDir, 'thumbnails');
-
-    if (await exists(panoramasSrc)) {
-      await ensureDir(panoramasDst);
-      const files = await fs.readdir(panoramasSrc);
+    // Pliki z archiwum trafiają do Vercel Blob
+    const uploadDirToBlob = async (
+      srcDir: string,
+      keyFor: (filename: string) => string
+    ) => {
+      if (!(await exists(srcDir))) return;
+      const files = await fs.readdir(srcDir);
       for (const f of files) {
-        const src = path.join(panoramasSrc, f);
+        const src = path.join(srcDir, f);
         const stat = await fs.stat(src);
-        if (stat.isFile()) {
-          await fs.copyFile(src, path.join(panoramasDst, f));
-        }
+        if (!stat.isFile()) continue;
+        const content = await fs.readFile(src);
+        await putBlob(keyFor(f), content, {
+          contentType: contentTypeForFile(f),
+        });
       }
-    }
+    };
 
-    if (await exists(thumbnailsSrc)) {
-      await ensureDir(thumbnailsDst);
-      const files = await fs.readdir(thumbnailsSrc);
-      for (const f of files) {
-        const src = path.join(thumbnailsSrc, f);
-        const stat = await fs.stat(src);
-        if (stat.isFile()) {
-          await fs.copyFile(src, path.join(thumbnailsDst, f));
-        }
-      }
-    }
+    await uploadDirToBlob(path.join(tempDir, 'panoramas'), (f) =>
+      panoramaKey(project.id, f)
+    );
+    await uploadDirToBlob(path.join(tempDir, 'thumbnails'), (f) =>
+      thumbnailKey(project.id, f)
+    );
 
     const updatedConfig = configForImportedProject(
       projectConfig,
@@ -179,8 +183,6 @@ export async function POST(request: NextRequest) {
       project.description
     );
     await updateProjectConfig(project.id, updatedConfig);
-
-    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
     return NextResponse.json({
       success: true,
@@ -191,9 +193,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
     if (error instanceof Error && error.message.includes('Forbidden')) {
       return NextResponse.json(
         { error: 'Wymagane uprawnienia admin lub edytor' },
@@ -208,6 +207,13 @@ export async function POST(request: NextRequest) {
       { error: 'Nie udało się zaimportować projektu' },
       { status: 500 }
     );
+  } finally {
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    if (zipUrl) {
+      await del(zipUrl).catch(() => {});
+    }
   }
 }
 

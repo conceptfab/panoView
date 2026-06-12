@@ -5,7 +5,15 @@ import {
   getPendingRequestNotificationTemplate,
 } from './templates';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy init – konstruktor Resend rzuca przy braku klucza, co wywalałoby build
+// (collecting page data) na środowiskach bez ustawionego RESEND_API_KEY.
+let resendClient: Resend | null = null;
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 // Nadawca: "Name <email@domain.com>". Set EMAIL_FROM_USE_RESEND_TEST=true tylko do testów (wysyłka tylko na adres konta Resend).
 function getEmailFrom(): string {
@@ -52,7 +60,7 @@ export async function sendOTPEmail(
   const subject = options?.isAdmin ? `[Admin] ${subjectBase}` : subjectBase;
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: getEmailFrom(),
       to: email,
       subject,
@@ -100,7 +108,7 @@ export async function sendBugReportToAdmins(
 </html>`;
   try {
     for (const to of adminEmails) {
-      const { error } = await resend.emails.send({
+      const { error } = await getResend().emails.send({
         from: getEmailFrom(),
         to,
         subject,
@@ -134,7 +142,7 @@ export async function sendPendingRequestNotificationToAdmins(
   const html = getPendingRequestNotificationTemplate(requesterEmail, appUrl);
   for (const to of adminEmails) {
     try {
-      const { error } = await resend.emails.send({
+      const { error } = await getResend().emails.send({
         from: getEmailFrom(),
         to,
         subject,

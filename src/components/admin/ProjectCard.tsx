@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Panorama, Project } from '@/types';
+import { uploadReplacementFiles } from '@/lib/upload-client';
 import { ClientDate } from '@/components/ui/client-date';
 import {
   Card,
@@ -180,17 +181,15 @@ export function ProjectCard({
     setIsReplacingPanoramas(true);
     setReplaceError(null);
 
-    const formData = new FormData();
-    for (const [panoramaId, file] of Object.entries(replaceFiles)) {
-      if (file) {
-        formData.append(`panorama:${panoramaId}`, file);
-      }
-    }
-
     try {
+      const replacements = await uploadReplacementFiles(
+        project.id,
+        replaceFiles
+      );
       const res = await fetch(`/api/projects/${project.id}/replace-panoramas`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replacements }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
