@@ -1,0 +1,99 @@
+{
+  "date": "2026-02-27",
+  "userId": "user-001",
+  "events": [
+    {
+      "type": "login",
+      "at": "2026-02-27T15:31:32.266Z",
+      "system": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "language": "pl",
+        "languages": [
+          "pl",
+          "en",
+          "en-GB",
+          "en-US",
+          "de-CH",
+          "de"
+        ],
+        "platform": "Win32",
+        "screenWidth": 1920,
+        "screenHeight": 1200,
+        "windowWidth": 1879,
+        "windowHeight": 1025,
+        "devicePixelRatio": 1.5,
+        "timezone": "Europe/Warsaw"
+      }
+    },
+    {
+      "type": "login",
+      "at": "2026-02-27T15:31:32.272Z",
+      "system": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "language": "pl",
+        "languages": [
+          "pl",
+          "en",
+          "en-GB",
+          "en-US",
+          "de-CH",
+          "de"
+        ],
+        "platform": "Win32",
+        "screenWidth": 1920,
+        "screenHeight": 1200,
+        "windowWidth": 1879,
+        "windowHeight": 1025,
+        "devicePixelRatio": 1.5,
+        "timezone": "Europe/Warsaw"
+      }
+    },
+    {
+      "type": "login",
+      "at": "2026-02-27T16:30:41.772Z",
+      "system": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "language": "pl",
+        "languages": [
+          "pl",
+          "en",
+          "en-GB",
+          "en-US",
+          "de-CH",
+          "de"
+        ],
+        "platform": "Win32",
+        "screenWidth": 1920,
+        "screenHeight": 1200,
+        "windowWidth": 1879,
+        "windowHeight": 1025,
+        "devicePixelRatio": 1.5,
+        "timezone": "Europe/Warsaw"
+      }
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-27T16:30:43.540Z",
+      "projectId": "jutrzenki-kopia",
+      "projectName": "Jutrzenki (kopia)"
+    },
+    {
+      "type": "view_end",
+      "at": "2026-02-27T16:30:43.544Z",
+      "projectId": "jutrzenki-kopia",
+      "durationSeconds": 0
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-27T16:30:43.546Z",
+      "projectId": "jutrzenki-kopia",
+      "projectName": "Jutrzenki (kopia)"
+    },
+    {
+      "type": "view_end",
+      "at": "2026-02-27T16:31:09.345Z",
+      "projectId": "jutrzenki-kopia",
+      "durationSeconds": 26
+    }
+  ]
+}

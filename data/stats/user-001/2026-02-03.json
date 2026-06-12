@@ -1,0 +1,135 @@
+{
+  "date": "2026-02-03",
+  "userId": "user-001",
+  "events": [
+    {
+      "type": "login",
+      "at": "2026-02-03T14:50:44.991Z",
+      "system": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "language": "pl",
+        "languages": [
+          "pl",
+          "en",
+          "en-GB",
+          "en-US",
+          "de-CH",
+          "de"
+        ],
+        "platform": "Win32",
+        "screenWidth": 1920,
+        "screenHeight": 1200,
+        "windowWidth": 1879,
+        "windowHeight": 1025,
+        "devicePixelRatio": 1.5,
+        "timezone": "Europe/Warsaw"
+      }
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-03T15:00:56.493Z",
+      "projectId": "Jutrzenki",
+      "projectName": "Jutrzenki"
+    },
+    {
+      "type": "view_end",
+      "at": "2026-02-03T15:01:02.265Z",
+      "projectId": "Jutrzenki",
+      "durationSeconds": 6
+    },
+    {
+      "type": "login",
+      "at": "2026-02-03T17:48:37.333Z",
+      "system": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "language": "pl",
+        "languages": [
+          "pl",
+          "en",
+          "en-GB",
+          "en-US",
+          "de-CH",
+          "de"
+        ],
+        "platform": "Win32",
+        "screenWidth": 1920,
+        "screenHeight": 1200,
+        "windowWidth": 1879,
+        "windowHeight": 1025,
+        "devicePixelRatio": 1.5,
+        "timezone": "Europe/Warsaw"
+      }
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-03T17:52:56.867Z",
+      "projectId": "Jutrzenki",
+      "projectName": "Jutrzenki"
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-03T17:52:56.913Z",
+      "projectId": "Jutrzenki",
+      "projectName": "Jutrzenki"
+    },
+    {
+      "type": "view_end",
+      "at": "2026-02-03T17:53:12.489Z",
+      "projectId": "Jutrzenki",
+      "durationSeconds": 16
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-03T17:55:06.392Z",
+      "projectId": "Jutrzenki",
+      "projectName": "Jutrzenki"
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-03T17:55:06.446Z",
+      "projectId": "Jutrzenki",
+      "projectName": "Jutrzenki"
+    },
+    {
+      "type": "view_end",
+      "at": "2026-02-03T17:55:49.339Z",
+      "projectId": "Jutrzenki",
+      "durationSeconds": 42
+    },
+    {
+      "type": "view_start",
+      "at": "2026-02-03T17:55:51.793Z",
+      "projectId": "Jutrzenki",
+      "projectName": "Jutrzenki"
+    },
+    {
+      "type": "view_end",
+      "at": "2026-02-03T17:56:00.209Z",
+      "projectId": "Jutrzenki",
+      "durationSeconds": 9
+    },
+    {
+      "type": "login",
+      "at": "2026-02-03T18:48:53.729Z",
+      "system": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "language": "pl",
+        "languages": [
+          "pl",
+          "en",
+          "en-GB",
+          "en-US",
+          "de-CH",
+          "de"
+        ],
+        "platform": "Win32",
+        "screenWidth": 1920,
+        "screenHeight": 1200,
+        "windowWidth": 1879,
+        "windowHeight": 1025,
+        "devicePixelRatio": 1.5,
+        "timezone": "Europe/Warsaw"
+      }
+    }
+  ]
+}
