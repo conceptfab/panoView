@@ -15,7 +15,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       requireAdminOrEditor(),
       params,
     ]);
-    const project = await getProjectById(projectId);
+    const [project, body] = await Promise.all([
+      getProjectById(projectId),
+      request.json(),
+    ]);
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
@@ -27,8 +30,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const body = await request.json();
-    const { imageData } = body;
+    const { imageData } = body as { imageData?: string };
 
     if (!imageData) {
       return NextResponse.json(
@@ -46,14 +48,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .resize(800, 400, { fit: 'cover' })
       .webp({ quality: 85 })
       .toBuffer();
-    await putBlob(thumbnailKey(projectId, 'thumb.webp'), thumbBuffer, {
-      contentType: 'image/webp',
-    });
 
-    // Update project thumbnailUrl
-    await updateProject(projectId, {
-      thumbnailUrl: `/uploads/projects/${projectId}/thumbnails/thumb.webp`,
-    });
+    const thumbnailPath = `/uploads/projects/${projectId}/thumbnails/thumb.webp`;
+    await Promise.all([
+      putBlob(thumbnailKey(projectId, 'thumb.webp'), thumbBuffer, {
+        contentType: 'image/webp',
+      }),
+      updateProject(projectId, { thumbnailUrl: thumbnailPath }),
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (error) {

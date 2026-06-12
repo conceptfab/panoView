@@ -26,8 +26,14 @@ export async function getAccessControl(): Promise<AccessControl> {
     db.select().from(accessPending).orderBy(accessPending.requestedAt),
   ]);
   return {
-    whitelist: rules.filter((r) => r.listType === 'whitelist').map(toRule),
-    blacklist: rules.filter((r) => r.listType === 'blacklist').map(toRule),
+    whitelist: rules.reduce<ReturnType<typeof toRule>[]>((acc, r) => {
+      if (r.listType === 'whitelist') acc.push(toRule(r));
+      return acc;
+    }, []),
+    blacklist: rules.reduce<ReturnType<typeof toRule>[]>((acc, r) => {
+      if (r.listType === 'blacklist') acc.push(toRule(r));
+      return acc;
+    }, []),
     pending: pending.map((p) => ({
       email: p.email,
       requestedAt: p.requestedAt,

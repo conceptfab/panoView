@@ -18,6 +18,33 @@ import { Trash2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UserStatsDay, StatsEvent } from '@/types/stats';
 
+function eventLabel(e: StatsEvent): string {
+  switch (e.type) {
+    case 'login':
+      return 'Logowanie';
+    case 'view_start':
+      return `Start: ${e.projectName ?? e.projectId}`;
+    case 'view_end':
+      return `Koniec: ${e.projectId} (${e.durationSeconds}s)`;
+    case 'screenshot':
+      return `Screenshot: ${e.projectName ?? e.projectId}`;
+    default:
+      return (e as StatsEvent).type;
+  }
+}
+
+function formatTime(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('pl-PL', {
+      dateStyle: 'short',
+      timeStyle: 'medium',
+    });
+  } catch {
+    return iso;
+  }
+}
+
 interface UserStatsSummary {
   userId: string;
   email: string | null;
@@ -126,33 +153,6 @@ export function StatsPanel() {
       );
     } finally {
       setCleaning(false);
-    }
-  };
-
-  const eventLabel = (e: StatsEvent): string => {
-    switch (e.type) {
-      case 'login':
-        return 'Logowanie';
-      case 'view_start':
-        return `Start: ${e.projectName ?? e.projectId}`;
-      case 'view_end':
-        return `Koniec: ${e.projectId} (${e.durationSeconds}s)`;
-      case 'screenshot':
-        return `Screenshot: ${e.projectName ?? e.projectId}`;
-      default:
-        return (e as StatsEvent).type;
-    }
-  };
-
-  const formatTime = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toLocaleString('pl-PL', {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      });
-    } catch {
-      return iso;
     }
   };
 

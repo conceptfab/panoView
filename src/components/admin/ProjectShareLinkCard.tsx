@@ -1,8 +1,6 @@
 'use client';
 
-// oxlint-disable react-doctor/prefer-useReducer
-
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -22,28 +20,32 @@ interface ShareState {
   url: string | null;
 }
 
+type ShareLoadState =
+  | { phase: 'loading' }
+  | { phase: 'ready'; data: ShareState };
+
 export function ProjectShareLinkCard({ projectId }: { projectId: string }) {
-  const [state, setState] = useState<ShareState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<ShareLoadState>({
+    phase: 'loading',
+  });
   const [saving, setSaving] = useState(false);
   const [pin, setPin] = useState('');
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoadState({ phase: 'loading' });
     try {
       const res = await fetch(`/api/projects/${projectId}/share`);
       if (!res.ok) throw new Error();
-      setState(await res.json());
+      setLoadState({ phase: 'ready', data: await res.json() });
     } catch {
       toast.error('Nie udało się pobrać linku');
-    } finally {
-      setLoading(false);
+      setLoadState({ phase: 'loading' });
     }
   }, [projectId]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const save = async (body: { isActive?: boolean; pin?: string | null }) => {
@@ -55,7 +57,8 @@ export function ProjectShareLinkCard({ projectId }: { projectId: string }) {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error();
-      setState(await res.json());
+      const data = await res.json();
+      setLoadState({ phase: 'ready', data });
       return true;
     } catch {
       toast.error('Nie udało się zapisać');
@@ -85,11 +88,14 @@ export function ProjectShareLinkCard({ projectId }: { projectId: string }) {
   };
 
   const copy = async () => {
-    if (!state?.url) return;
-    await navigator.clipboard.writeText(state.url);
+    if (loadState.phase !== 'ready' || !loadState.data.url) return;
+    await navigator.clipboard.writeText(loadState.data.url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+
+  const state = loadState.phase === 'ready' ? loadState.data : null;
+  const loading = loadState.phase === 'loading';
 
   return (
     <Card className="mt-6">

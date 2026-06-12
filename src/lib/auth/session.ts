@@ -38,7 +38,7 @@ export async function destroySession(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
-export async function requireAuth(): Promise<TokenPayload> {
+async function requireAuth(): Promise<TokenPayload> {
   const session = await getSession();
   if (!session) {
     throw new Error('Unauthorized');

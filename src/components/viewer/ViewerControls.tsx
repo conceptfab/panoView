@@ -11,6 +11,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { cn } from '@/lib/utils';
 
 interface ViewerControlsProps {
   autoRotate: boolean;
@@ -21,6 +22,9 @@ interface ViewerControlsProps {
   isAdmin?: boolean;
   onGenerateThumbnail?: () => Promise<void>;
 }
+
+const controlClassName =
+  'size-11 bg-black/50 hover:bg-black/70 text-white border-0';
 
 export function ViewerControls({
   autoRotate,
@@ -56,13 +60,13 @@ export function ViewerControls({
   }, []);
 
   return (
-    <div className="absolute top-6 right-6 flex gap-2 z-40">
+    <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex gap-2 z-40">
       <Button
         variant="secondary"
         size="icon"
-        className="bg-black/50 hover:bg-black/70 text-white border-0"
+        className={controlClassName}
         onClick={onHome}
-        title="Powrót do startu"
+        aria-label="Powrót do startu panoramy"
       >
         <Home className="size-5" />
       </Button>
@@ -70,12 +74,15 @@ export function ViewerControls({
       <Button
         variant="secondary"
         size="icon"
-        className="bg-black/50 hover:bg-black/70 text-white border-0"
+        className={controlClassName}
         onClick={onToggleAutoRotate}
-        title={autoRotate ? 'Wyłącz auto-rotację' : 'Włącz auto-rotację'}
+        aria-label={
+          autoRotate ? 'Wyłącz auto-rotację' : 'Włącz auto-rotację'
+        }
+        aria-pressed={autoRotate}
       >
         <RotateCw
-          className={`size-5 ${autoRotate ? 'animate-spin' : ''}`}
+          className={cn('size-5', autoRotate && 'motion-safe:animate-spin')}
           style={{ animationDuration: '900ms' }}
         />
       </Button>
@@ -83,9 +90,9 @@ export function ViewerControls({
       <Button
         variant="secondary"
         size="icon"
-        className="bg-black/50 hover:bg-black/70 text-white border-0"
+        className={controlClassName}
         onClick={onScreenshot}
-        title="Zrzut ekranu"
+        aria-label="Zrób zrzut ekranu panoramy"
       >
         <Camera className="size-5" />
       </Button>
@@ -94,13 +101,13 @@ export function ViewerControls({
         <Button
           variant="secondary"
           size="icon"
-          className="bg-amber-600/80 hover:bg-amber-500/90 text-white border-0"
+          className="size-11 bg-amber-600/80 hover:bg-amber-500/90 text-white border-0"
           onClick={handleGenerateThumbnail}
           disabled={isGeneratingThumbnail}
-          title="Generuj miniaturkę z aktualnego widoku"
+          aria-label="Generuj miniaturkę z aktualnego widoku"
         >
           {isGeneratingThumbnail ? (
-            <Loader2 className="size-5 animate-spin" />
+            <Loader2 className="size-5 motion-safe:animate-spin" />
           ) : (
             <ImagePlus className="size-5" />
           )}
@@ -110,9 +117,11 @@ export function ViewerControls({
       <Button
         variant="secondary"
         size="icon"
-        className="bg-black/50 hover:bg-black/70 text-white border-0"
+        className={controlClassName}
         onClick={onFullscreen}
-        title={isFullscreen ? 'Wyjdź z pełnego ekranu' : 'Pełny ekran'}
+        aria-label={
+          isFullscreen ? 'Wyjdź z pełnego ekranu' : 'Pełny ekran'
+        }
       >
         {isFullscreen ? (
           <Minimize className="size-5" />

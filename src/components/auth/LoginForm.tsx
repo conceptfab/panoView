@@ -1,7 +1,7 @@
 'use client';
 
 // oxlint-disable react-doctor/no-giant-component react-doctor/prefer-useReducer react-doctor/rendering-usetransition-loading
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,12 +30,9 @@ export function LoginForm() {
   } | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Focus first code input when entering code step
-  useEffect(() => {
-    if (step === 'code' && inputRefs.current[0]) {
-      inputRefs.current[0].focus();
-    }
-  }, [step]);
+  const focusFirstCodeInput = () => {
+    queueMicrotask(() => inputRefs.current[0]?.focus());
+  };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +63,7 @@ export function LoginForm() {
             type: 'success',
             text: 'Kod został wysłany na podany adres email',
           });
+          focusFirstCodeInput();
         }
       } else {
         setMessage({ type: 'error', text: data.message });
@@ -246,6 +244,7 @@ export function LoginForm() {
         ) : (
           <div className="space-y-4">
             <button
+              type="button"
               onClick={handleBack}
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
               disabled={isLoading}
@@ -263,6 +262,8 @@ export function LoginForm() {
                   }}
                   type="text"
                   inputMode="numeric"
+                  autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                  aria-label={`Cyfra ${index + 1} kodu weryfikacyjnego`}
                   maxLength={1}
                   value={code[index]}
                   onChange={(e) => handleCodeChange(index, e.target.value)}
@@ -286,6 +287,7 @@ export function LoginForm() {
             )}
 
             <Button
+              type="button"
               onClick={() => handleCodeSubmit()}
               className="w-full"
               disabled={isLoading || code.some((d) => d === '')}
@@ -302,6 +304,7 @@ export function LoginForm() {
 
             <div className="text-center">
               <button
+                type="button"
                 onClick={handleResendCode}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 disabled={isLoading}

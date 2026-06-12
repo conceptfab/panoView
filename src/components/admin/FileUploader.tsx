@@ -19,6 +19,19 @@ interface UploadFile {
   progress: number;
 }
 
+function validateUploadFile(file: File): boolean {
+  const validTypes = ['image/webp', 'image/jpeg', 'image/png'];
+  if (!validTypes.includes(file.type)) {
+    toast.error(`${file.name}: Nieprawidłowy format. Dozwolone: WebP, JPG, PNG`);
+    return false;
+  }
+  if (file.size > 50 * 1024 * 1024) {
+    toast.error(`${file.name}: Plik zbyt duży. Maksymalnie 50MB`);
+    return false;
+  }
+  return true;
+}
+
 export function FileUploader({ projectId }: FileUploaderProps) {
   const { refresh } = useRouter();
   const [files, setFiles] = useState<UploadFile[]>([]);
@@ -35,22 +48,9 @@ export function FileUploader({ projectId }: FileUploaderProps) {
     }
   }, []);
 
-  const validateFile = (file: File): boolean => {
-    const validTypes = ['image/webp', 'image/jpeg', 'image/png'];
-    if (!validTypes.includes(file.type)) {
-      toast.error(`${file.name}: Nieprawidłowy format. Dozwolone: WebP, JPG, PNG`);
-      return false;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error(`${file.name}: Plik zbyt duży. Maksymalnie 50MB`);
-      return false;
-    }
-    return true;
-  };
-
   const addFiles = useCallback((newFiles: FileList) => {
     const validFiles = Array.from(newFiles).flatMap((file) =>
-      validateFile(file)
+      validateUploadFile(file)
         ? [
             {
               file,
@@ -104,24 +104,25 @@ export function FileUploader({ projectId }: FileUploaderProps) {
     );
 
     try {
-      // 1. Direct upload do Vercel Blob (omija limit 4.5MB requestu)
-      const uploaded: { url: string; name: string; contentType: string }[] = [];
-      for (const f of pendingFiles) {
-        const blob = await upload(
-          `tmp/uploads/${projectId}/${f.file.name}`,
-          f.file,
-          {
-            access: 'public',
-            handleUploadUrl: '/api/upload',
-            clientPayload: JSON.stringify({ projectId }),
-          }
-        );
-        uploaded.push({
-          url: blob.url,
-          name: f.file.name,
-          contentType: f.file.type,
-        });
-      }
+      const pendingEntries = pendingFiles.map((f) => f.file);
+      const uploaded = await Promise.all(
+        pendingEntries.map(async (file) => {
+          const blob = await upload(
+            `tmp/uploads/${projectId}/${file.name}`,
+            file,
+            {
+              access: 'public',
+              handleUploadUrl: '/api/upload',
+              clientPayload: JSON.stringify({ projectId }),
+            }
+          );
+          return {
+            url: blob.url,
+            name: file.name,
+            contentType: file.type,
+          };
+        })
+      );
 
       // 2. Przetworzenie na panoramy (warianty, miniatury, config)
       const res = await fetch('/api/upload/process', {

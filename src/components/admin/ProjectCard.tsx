@@ -5,9 +5,10 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Panorama, Project } from '@/types';
 import { uploadReplacementFiles } from '@/lib/upload-client';
+import { downloadZipFromApi } from '@/utils/download-zip';
 import { ClientDate } from '@/components/ui/client-date';
 import {
   Card,
@@ -124,6 +125,8 @@ export function ProjectCard({
   const config = sizeConfig[size];
   const groups = groupsProp ?? [];
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [panoramasForReplace, setPanoramasForReplace] = useState<Panorama[] | null>(null);
   const [isLoadingPanoramas, setIsLoadingPanoramas] = useState(false);
   const [replaceFiles, setReplaceFiles] = useState<Record<string, File | null>>({});
@@ -134,43 +137,41 @@ export function ProjectCard({
     [replaceFiles]
   );
 
-  useEffect(() => {
-    let isActive = true;
-    if (!replaceDialogOpen) {
-      setPanoramasForReplace(null);
-      setReplaceFiles({});
-      setReplaceError(null);
-      setIsLoadingPanoramas(false);
-      return;
-    }
-
-    setIsLoadingPanoramas(true);
-    setReplaceError(null);
-    fetch(`/api/projects/${project.id}/config`)
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error('Nie udało się pobrać panoram');
-        }
-        if (!isActive) return;
-        const data = await res.json();
-        setPanoramasForReplace(data.panoramas ?? []);
+  const handleReplaceDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setReplaceDialogOpen(open);
+      if (!open) {
+        setPanoramasForReplace(null);
         setReplaceFiles({});
-      })
-      .catch((err) => {
-        if (!isActive) return;
-        setReplaceError(
-          err instanceof Error ? err.message : 'Nie udało się pobrać panoram'
-        );
-      })
-      .finally(() => {
-        if (!isActive) return;
+        setReplaceError(null);
         setIsLoadingPanoramas(false);
-      });
+        return;
+      }
 
-    return () => {
-      isActive = false;
-    };
-  }, [replaceDialogOpen, project.id]);
+      setIsLoadingPanoramas(true);
+      setReplaceError(null);
+      void (async () => {
+        try {
+          const res = await fetch(`/api/projects/${project.id}/config`);
+          if (!res.ok) {
+            throw new Error('Nie udało się pobrać panoram');
+          }
+          const data = await res.json();
+          setPanoramasForReplace(data.panoramas ?? []);
+          setReplaceFiles({});
+        } catch (err) {
+          setReplaceError(
+            err instanceof Error
+              ? err.message
+              : 'Nie udało się pobrać panoram'
+          );
+        } finally {
+          setIsLoadingPanoramas(false);
+        }
+      })();
+    },
+    [project.id]
+  );
 
   const handleFileInput = useCallback((panoramaId: string, file: File | null) => {
     setReplaceFiles((prev) => ({ ...prev, [panoramaId]: file }));
@@ -210,15 +211,8 @@ export function ProjectCard({
     }
   }, [project.id, refresh, replaceFiles, selectedFileCount]);
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (
-      !confirm(
-        `Czy na pewno usunąć projekt „${project.name}"? Nie można tego cofnąć.`
-      )
-    ) {
-      return;
-    }
+  const handleDelete = async () => {
+    setIsDeleting(true);
     try {
       const res = await fetch(`/api/projects/${project.id}`, {
         method: 'DELETE',
@@ -228,21 +222,26 @@ export function ProjectCard({
         throw new Error(data.error || 'Błąd usuwania');
       }
       toast.success(`Projekt „${project.name}" został usunięty.`);
+      setDeleteDialogOpen(false);
       refresh();
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Nie udało się usunąć projektu'
       );
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleDownload = () => {
-    window.open(
-      `/api/files/projects/${project.id}/download`,
-      '_blank',
-      'noopener,noreferrer'
-    );
-    toast.success(`Pobieranie „${project.name}"…`);
+  const handleDownload = async () => {
+    try {
+      await downloadZipFromApi(`/api/files/projects/${project.id}/download`);
+      toast.success(`Pobieranie „${project.name}"…`);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Nie udało się pobrać projektu'
+      );
+    }
   };
 
   const handleClone = async (e: React.MouseEvent) => {
@@ -265,7 +264,7 @@ export function ProjectCard({
       );
     }
   };
-  const openReplaceDialog = () => setReplaceDialogOpen(true);
+  const openReplaceDialog = () => handleReplaceDialogOpenChange(true);
 
   return (
     <Card className="overflow-hidden pt-0 gap-0">
@@ -398,7 +397,7 @@ export function ProjectCard({
               <DropdownMenuItem
                 className="text-red-600"
                 disabled={disableDownload}
-                onClick={disableDownload ? undefined : handleDelete}
+                onClick={disableDownload ? undefined : () => setDeleteDialogOpen(true)}
               >
                 <Trash2 className="size-4 mr-2" />
                 Usuń
@@ -438,7 +437,7 @@ export function ProjectCard({
           </p>
         )}
       </CardContent>
-      <Dialog open={replaceDialogOpen} onOpenChange={setReplaceDialogOpen}>
+      <Dialog open={replaceDialogOpen} onOpenChange={handleReplaceDialogOpenChange}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Zastąp panoramy</DialogTitle>
@@ -531,7 +530,7 @@ export function ProjectCard({
           <DialogFooter className="mt-4">
             <Button
               variant="outline"
-              onClick={() => setReplaceDialogOpen(false)}
+              onClick={() => handleReplaceDialogOpenChange(false)}
               disabled={isReplacingPanoramas}
             >
               Anuluj
@@ -541,6 +540,34 @@ export function ProjectCard({
               disabled={selectedFileCount === 0 || isReplacingPanoramas}
             >
               {isReplacingPanoramas ? 'Aktualizuję…' : 'Zastąp panoramy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Usunąć projekt?</DialogTitle>
+            <DialogDescription>
+              Projekt „{project.name}” zostanie trwale usunięty. Tej operacji
+              nie można cofnąć.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isDeleting}
+            >
+              Anuluj
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Usuwanie…' : 'Usuń projekt'}
             </Button>
           </DialogFooter>
         </DialogContent>

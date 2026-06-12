@@ -57,12 +57,18 @@ export function SharePinGate({ token, projectName }: SharePinGateProps) {
           <Input
             id="pin"
             type="password"
+            inputMode="numeric"
+            autoComplete="one-time-code"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             required
           />
         </div>
-        {error && <p className="text-sm text-red-400">Nieprawidłowy PIN.</p>}
+        {error && (
+          <p className="text-sm text-red-400" role="alert" aria-live="polite">
+            Nieprawidłowy PIN.
+          </p>
+        )}
         <Button type="submit" className="w-full" disabled={loading || !pin}>
           {loading ? (
             <Loader2 className="size-4 animate-spin" />

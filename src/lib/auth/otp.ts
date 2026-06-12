@@ -86,7 +86,7 @@ export async function verifyOTP(
   return { valid: true };
 }
 
-export async function deleteOTP(email: string): Promise<void> {
+async function deleteOTP(email: string): Promise<void> {
   const normalizedEmail = email.toLowerCase().trim();
   await getDb().delete(otpCodes).where(eq(otpCodes.email, normalizedEmail));
 }

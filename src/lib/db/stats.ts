@@ -97,7 +97,7 @@ export async function getStatsForUser(
 }
 
 /** Lista ID użytkowników, którzy mają jakiekolwiek statystyki. */
-export async function listUserIdsWithStats(): Promise<string[]> {
+async function listUserIdsWithStats(): Promise<string[]> {
   const rows = await getDb()
     .selectDistinct({ userId: statsEvents.userId })
     .from(statsEvents)

@@ -117,7 +117,7 @@ export async function updateGroup(
   return getGroupById(id);
 }
 
-export async function addProjectToGroup(
+async function addProjectToGroup(
   groupId: string,
   projectId: string
 ): Promise<boolean> {
@@ -136,7 +136,7 @@ export async function addProjectToGroup(
   return true;
 }
 
-export async function removeProjectFromGroup(
+async function removeProjectFromGroup(
   groupId: string,
   projectId: string
 ): Promise<boolean> {

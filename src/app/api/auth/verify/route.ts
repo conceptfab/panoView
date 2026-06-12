@@ -10,7 +10,7 @@ import {
 } from '@/lib/db/users';
 
 const verifySchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   code: z.string().length(6).regex(/^\d+$/, 'Kod musi składać się z 6 cyfr'),
 });
 

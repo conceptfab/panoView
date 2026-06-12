@@ -56,9 +56,13 @@ export function ProjectEditForm({
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
     project.groupIds ?? []
   );
-  const [config, setConfig] = useState<ProjectConfig | null>(null);
-  const [isConfigLoading, setIsConfigLoading] = useState(true);
-  const [configError, setConfigError] = useState<string | null>(null);
+  type ConfigSlice =
+    | { status: 'loading' }
+    | { status: 'error'; message: string }
+    | { status: 'ready'; config: ProjectConfig };
+  const [configSlice, setConfigSlice] = useState<ConfigSlice>({
+    status: 'loading',
+  });
   const [replaceFiles, setReplaceFiles] = useState<Record<string, File | null>>(
     {}
   );
@@ -138,29 +142,34 @@ export function ProjectEditForm({
   };
 
   const fetchConfig = useCallback(async () => {
-    setIsConfigLoading(true);
-    setConfigError(null);
+    setConfigSlice({ status: 'loading' });
     try {
       const res = await fetch(`/api/projects/${project.id}/config`);
       if (!res.ok) {
         throw new Error('Nie udało się pobrać konfiguracji panoram');
       }
       const data: ProjectConfig = await res.json();
-      setConfig(data);
+      setConfigSlice({ status: 'ready', config: data });
     } catch (error) {
-      setConfigError(
-        error instanceof Error
-          ? error.message
-          : 'Nie udało się pobrać konfiguracji panoram'
-      );
-    } finally {
-      setIsConfigLoading(false);
+      setConfigSlice({
+        status: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Nie udało się pobrać konfiguracji panoram',
+      });
     }
   }, [project.id]);
 
   useEffect(() => {
-    fetchConfig();
+    void fetchConfig();
   }, [fetchConfig]);
+
+  const config =
+    configSlice.status === 'ready' ? configSlice.config : null;
+  const isConfigLoading = configSlice.status === 'loading';
+  const configError =
+    configSlice.status === 'error' ? configSlice.message : null;
 
   const handleReplaceFile = useCallback(
     (panoramaId: string, file: File | null) => {

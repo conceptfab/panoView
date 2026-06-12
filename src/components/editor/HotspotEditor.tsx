@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import {
   ArrowLeft,
   Save,
@@ -27,6 +28,7 @@ import {
   RotateCw,
   Camera,
   Maximize,
+  PanelRightOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateId } from '@/utils/helpers';
@@ -35,6 +37,8 @@ import {
   resolvePanoramaVariant,
   resolvePanoramaVariantFile,
 } from '@/lib/panorama-variants';
+import { useStartupOptimizationNotice } from '@/hooks/useStartupOptimizationNotice';
+import { OptimizationNotice } from '@/components/viewer/OptimizationNotice';
 
 interface HotspotEditorProps {
   projectId: string;
@@ -68,9 +72,8 @@ export function HotspotEditor({
     width: number;
     height: number;
   } | null>(null);
-  const [showOptimizationInfo, setShowOptimizationInfo] = useState(false);
-  const shownStartupOptimizationInfoRef = useRef(false);
   const [isAddingMode, setIsAddingMode] = useState(false);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const markerRef = useRef<unknown>(null);
   const isAddingModeRef = useRef(false);
   const configRef = useRef(initialConfig);
@@ -78,18 +81,9 @@ export function HotspotEditor({
   const existingHotspotTextureRef = useRef<unknown>(null);
   const currentPanoramaIndexRef = useRef(0);
 
-  // Keep refs in sync with state
-  useEffect(() => {
-    isAddingModeRef.current = isAddingMode;
-  }, [isAddingMode]);
-
-  useEffect(() => {
-    configRef.current = config;
-  }, [config]);
-
-  useEffect(() => {
-    currentPanoramaIndexRef.current = currentPanoramaIndex;
-  }, [currentPanoramaIndex]);
+  isAddingModeRef.current = isAddingMode;
+  configRef.current = config;
+  currentPanoramaIndexRef.current = currentPanoramaIndex;
 
   const currentPanorama = config.panoramas[currentPanoramaIndex];
   const selectedHotspot = currentPanorama?.hotspots.find(
@@ -502,11 +496,13 @@ export function HotspotEditor({
 
   useEffect(() => {
     return () => {
-      if (currentPanoramaRef.current) {
-        (currentPanoramaRef.current as { dispose?: () => void }).dispose?.();
+      const pano = currentPanoramaRef.current;
+      if (pano) {
+        (pano as { dispose?: () => void }).dispose?.();
       }
-      if (viewerRef.current) {
-        (viewerRef.current as { dispose?: () => void }).dispose?.();
+      const viewer = viewerRef.current;
+      if (viewer) {
+        (viewer as { dispose?: () => void }).dispose?.();
       }
     };
   }, []);
@@ -673,27 +669,13 @@ export function HotspotEditor({
     }
   };
 
-  const optimizationInfoText =
-    config.settings.optimizePanoramaForScreen && currentOptimizedSize
-      ? `Załadowano zoptymalizowaną panoramę: ${currentOptimizedSize.width} x ${currentOptimizedSize.height}`
-      : null;
+  const showOptimizedNotice =
+    config.settings.optimizePanoramaForScreen && currentOptimizedSize !== null;
 
-  useEffect(() => {
-    if (!optimizationInfoText || currentPanoramaIndex !== 0) {
-      setShowOptimizationInfo(false);
-      return;
-    }
-    if (shownStartupOptimizationInfoRef.current) {
-      setShowOptimizationInfo(false);
-      return;
-    }
-    shownStartupOptimizationInfoRef.current = true;
-    setShowOptimizationInfo(true);
-    const timer = setTimeout(() => {
-      setShowOptimizationInfo(false);
-    }, 20000);
-    return () => clearTimeout(timer);
-  }, [optimizationInfoText, currentPanoramaIndex]);
+  const showOptimizationInfo = useStartupOptimizationNotice(
+    showOptimizedNotice,
+    currentPanoramaIndex
+  );
 
   return (
     <>
@@ -717,8 +699,17 @@ export function HotspotEditor({
       )}
 
       <div className="fixed inset-0 flex bg-zinc-900">
+        {mobilePanelOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            aria-label="Zamknij panel edycji"
+            onClick={() => setMobilePanelOpen(false)}
+          />
+        )}
+
         {/* Viewer */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-w-0">
           <div
             ref={containerRef}
             className={`w-full h-full ${isAddingMode ? 'cursor-crosshair' : ''
@@ -736,47 +727,67 @@ export function HotspotEditor({
           )}
 
           {/* Top bar */}
-          <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <Link href={`/admin/projects/${projectId}`}>
-                <Button variant="secondary" size="xs" className="h-7 text-[10px] px-2">
-                  <ArrowLeft className="size-3 mr-1" />
-                  Powrót
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-11 px-3 text-xs shrink-0"
+                  aria-label="Powrót do edycji projektu"
+                >
+                  <ArrowLeft className="size-4 mr-1" />
+                  <span className="hidden sm:inline">Powrót</span>
                 </Button>
               </Link>
-              <span className="text-white font-medium text-xs">{projectName}</span>
+              <span className="text-white font-medium text-xs truncate">
+                {projectName}
+              </span>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               <Button
                 variant="secondary"
-                size="icon-xs"
-                className={`size-7 ${autoRotate
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : ''
-                  }`}
+                size="icon"
+                className="size-11 md:hidden"
+                onClick={() => setMobilePanelOpen(true)}
+                aria-label="Otwórz panel edycji hotspotów"
+              >
+                <PanelRightOpen className="size-5" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon"
+                className={cn(
+                  'size-11',
+                  autoRotate &&
+                    'bg-primary text-primary-foreground hover:bg-primary/90'
+                )}
                 onClick={toggleAutoRotate}
-                title="Auto-rotacja"
+                aria-label={
+                  autoRotate ? 'Wyłącz auto-rotację' : 'Włącz auto-rotację'
+                }
+                aria-pressed={autoRotate}
               >
-                <RotateCw className="size-3.5" />
+                <RotateCw className="size-5" />
               </Button>
               <Button
                 variant="secondary"
-                size="icon-xs"
-                className="size-7"
+                size="icon"
+                className="size-11"
                 onClick={takeScreenshot}
-                title="Screenshot"
+                aria-label="Zrób zrzut ekranu"
               >
-                <Camera className="size-3.5" />
+                <Camera className="size-5" />
               </Button>
               <Button
                 variant="secondary"
-                size="icon-xs"
-                className="size-7"
+                size="icon"
+                className="size-11"
                 onClick={toggleFullscreen}
-                title="Pełny ekran"
+                aria-label="Pełny ekran"
               >
-                <Maximize className="size-3.5" />
+                <Maximize className="size-5" />
               </Button>
             </div>
           </div>
@@ -787,8 +798,14 @@ export function HotspotEditor({
               <span className="font-mono text-[10px]">
                 {clickedPosition.x}, {clickedPosition.y}, {clickedPosition.z}
               </span>
-              <Button variant="ghost" size="icon-xs" className="size-5" onClick={copyCoordinates}>
-                <Copy className="size-3" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-11"
+                onClick={copyCoordinates}
+                aria-label="Kopiuj współrzędne"
+              >
+                <Copy className="size-4" />
               </Button>
             </div>
           )}
@@ -800,19 +817,26 @@ export function HotspotEditor({
             </div>
           )}
 
-          {optimizationInfoText &&
+          {showOptimizedNotice &&
             showOptimizationInfo &&
-            !isLoading && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none z-30">
-                <div className="bg-black/55 text-white text-xs sm:text-sm px-3 py-1.5 rounded-full backdrop-blur-sm border border-white/20 whitespace-nowrap">
-                  {optimizationInfoText}
-                </div>
-              </div>
+            !isLoading &&
+            currentOptimizedSize && (
+              <OptimizationNotice
+                width={currentOptimizedSize.width}
+                height={currentOptimizedSize.height}
+              />
             )}
         </div>
 
-        {/* Side panel */}
-        <div className="w-72 bg-white dark:bg-zinc-950 border-l flex flex-col">
+        {/* Side panel — drawer on mobile, fixed column on md+ */}
+        <div
+          className={cn(
+            'bg-white dark:bg-zinc-950 border-l flex flex-col z-40',
+            'fixed inset-y-0 right-0 w-80 max-w-[92vw] shadow-xl transition-transform duration-200 ease-out',
+            mobilePanelOpen ? 'translate-x-0' : 'translate-x-full',
+            'md:static md:w-72 md:max-w-none md:shadow-none md:translate-x-0 md:shrink-0'
+          )}
+        >
           <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 scrollbar-hide">
             {/* Panorama selector */}
             <Card>
@@ -902,39 +926,36 @@ export function HotspotEditor({
                 {currentPanorama?.hotspots.map((hotspot) => (
                   <div
                     key={hotspot.id}
-                    className={`p-2.5 rounded-md border cursor-pointer transition-colors ${selectedHotspotId === hotspot.id
+                    className={`p-2.5 rounded-md border transition-colors ${
+                      selectedHotspotId === hotspot.id
                         ? 'border-primary bg-primary/5'
                         : 'hover:bg-muted/50'
-	                      }`}
-	                    onClick={() => setSelectedHotspotId(hotspot.id)}
-	                    onKeyDown={(event) => {
-	                      if (event.key === 'Enter' || event.key === ' ') {
-	                        event.preventDefault();
-	                        setSelectedHotspotId(hotspot.id);
-	                      }
-	                    }}
-	                    role="button"
-	                    tabIndex={0}
-	                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium truncate">
-                        {hotspot.title}
-                      </span>
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        className="flex-1 min-w-0 text-left cursor-pointer"
+                        onClick={() => setSelectedHotspotId(hotspot.id)}
+                      >
+                        <span className="text-xs font-medium truncate block">
+                          {hotspot.title}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground leading-none">
+                          {hotspot.type === 'link' ? 'Link' : 'Info'}
+                        </span>
+                      </button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-5"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteHotspot(hotspot.id);
-                        }}
+                        className="size-11 shrink-0"
+                        type="button"
+                        aria-label={`Usuń hotspot ${hotspot.title}`}
+                        onClick={() => handleDeleteHotspot(hotspot.id)}
                       >
-                        <Trash2 className="size-3" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </div>
-                    <p className="text-[10px] text-muted-foreground leading-none">
-                      {hotspot.type === 'link' ? 'Link' : 'Info'}
-                    </p>
                   </div>
                 ))}
 
@@ -1105,7 +1126,15 @@ export function HotspotEditor({
 
           {/* Save button at bottom */}
           <div className="p-3.5 border-t bg-white dark:bg-zinc-950">
-            <Button className="w-full h-10 text-xs" onClick={handleSave} disabled={isSaving} size="sm">
+            <Button
+              className="w-full h-11 text-xs"
+              onClick={() => {
+                void handleSave();
+                setMobilePanelOpen(false);
+              }}
+              disabled={isSaving}
+              size="sm"
+            >
               {isSaving ? (
                 <Loader2 className="size-4 mr-2 animate-spin" />
               ) : (

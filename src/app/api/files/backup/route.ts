@@ -9,7 +9,7 @@ import { PROJECTS_PREFIX, listBlobs } from '@/lib/storage/blob';
 
 export const maxDuration = 300;
 
-export async function GET() {
+export async function POST() {
   try {
     await requireAdmin();
 

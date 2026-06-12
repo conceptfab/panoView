@@ -7,7 +7,7 @@ import { groupProjects } from './schema';
  * więc nie ma dwóch kopii do synchronizowania. Funkcja zostaje jako no-op
  * dla zgodności z istniejącymi wywołaniami.
  */
-export async function syncGroupsProjectIdsFromProjects(): Promise<void> {
+async function syncGroupsProjectIdsFromProjects(): Promise<void> {
   // no-op: group_projects jest jedynym źródłem prawdy
 }
 
@@ -69,7 +69,7 @@ export async function setProjectGroupIds(
  * Po usunięciu grupy – wpisy znikają przez ON DELETE CASCADE; funkcja
  * zostaje dla zgodności i usuwa wpisy jawnie, gdyby była wywołana osobno.
  */
-export async function removeGroupFromAllProjects(
+async function removeGroupFromAllProjects(
   groupId: string
 ): Promise<void> {
   const db = getDb();

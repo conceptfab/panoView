@@ -75,11 +75,10 @@ export async function getProjectsByGroupId(
     .where(eq(groupProjects.groupId, groupId));
   const ids = links.map((l) => l.projectId);
   if (ids.length === 0) return [];
-  const rows = await db
-    .select()
-    .from(projectsTable)
-    .where(inArray(projectsTable.id, ids));
-  const groupsMap = await groupIdsForProjects(ids);
+  const [rows, groupsMap] = await Promise.all([
+    db.select().from(projectsTable).where(inArray(projectsTable.id, ids)),
+    groupIdsForProjects(ids),
+  ]);
   return rows.map((r) => toProject(r, groupsMap.get(r.id) ?? []));
 }
 

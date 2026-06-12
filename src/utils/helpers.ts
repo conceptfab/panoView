@@ -17,7 +17,7 @@ const POLISH_MAP: Record<string, string> = {
   'Ó': 'o', 'Ś': 's', 'Ź': 'z', 'Ż': 'z',
 };
 
-export function slugify(text: string): string {
+function slugify(text: string): string {
   return text
     .split('')
     .map(c => POLISH_MAP[c] || c)
@@ -62,12 +62,12 @@ export function matchEmailPattern(email: string, pattern: string): boolean {
   return email.toLowerCase() === pattern.toLowerCase();
 }
 
-export function getFileExtension(filename: string): string {
+function getFileExtension(filename: string): string {
   const parts = filename.split('.');
   return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
 }
 
-export function isValidImageFormat(filename: string): boolean {
+function isValidImageFormat(filename: string): boolean {
   const ext = getFileExtension(filename);
   return ['webp', 'jpg', 'jpeg', 'png'].includes(ext);
 }

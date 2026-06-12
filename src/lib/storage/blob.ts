@@ -155,9 +155,11 @@ export async function deletePrefix(prefix: string): Promise<number> {
   const blobs = await listBlobs(prefix);
   if (blobs.length === 0) return 0;
   const BATCH = 100;
+  const batches: string[][] = [];
   for (let i = 0; i < blobs.length; i += BATCH) {
-    await del(blobs.slice(i, i + BATCH).map((b) => b.url));
+    batches.push(blobs.slice(i, i + BATCH).map((b) => b.url));
   }
+  await Promise.all(batches.map((urls) => del(urls)));
   return blobs.length;
 }
 

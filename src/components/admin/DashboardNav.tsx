@@ -21,6 +21,7 @@ import {
   LogOut,
   Menu,
   Bug,
+  Tags,
 } from 'lucide-react';
 import { BugHunterDialog } from '@/components/auth/BugHunterDialog';
 
@@ -40,6 +41,8 @@ export function DashboardNav({ userRole, userEmail }: DashboardNavProps) {
   const navItems = isAdmin
     ? [
         { href: '/admin/projects', label: 'Projekty', icon: FolderOpen },
+        { href: '/admin/groups', label: 'Grupy', icon: Tags },
+        { href: '/gallery', label: 'Galeria', icon: LayoutGrid },
         { href: '/admin/users', label: 'Użytkownicy', icon: Users },
         { href: '/admin/stats', label: 'Statystyki', icon: BarChart3 },
       ]
@@ -95,8 +98,9 @@ export function DashboardNav({ userRole, userEmail }: DashboardNavProps) {
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="size-11"
                   onClick={() => setBugHunterOpen(true)}
-                  title="Bug hunter – zgłoś błąd"
+                  aria-label="Bug hunter – zgłoś błąd"
                 >
                   <Bug className="size-5" />
                 </Button>
@@ -108,7 +112,7 @@ export function DashboardNav({ userRole, userEmail }: DashboardNavProps) {
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
+                <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label="Menu nawigacji">
                   <Menu className="size-5" />
                 </Button>
               </DropdownMenuTrigger>

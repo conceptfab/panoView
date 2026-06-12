@@ -30,7 +30,13 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatFileSize } from '@/utils/helpers';
+import { downloadZipFromApi } from '@/utils/download-zip';
 import { Progress } from '@/components/ui/progress';
+
+async function backupAllProjects() {
+  await downloadZipFromApi('/api/files/backup');
+  toast.success('Pobieranie kopii zapasowej wszystkich projektów…');
+}
 
 interface ProjectWithSize extends Project {
   size?: number;
@@ -60,8 +66,11 @@ export function FileManager({ projects }: FileManagerProps) {
   const projectCount = projects.length;
 
   const handleBackupAll = () => {
-    window.open('/api/files/backup', '_blank', 'noopener,noreferrer');
-    toast.success('Pobieranie kopii zapasowej wszystkich projektów…');
+    void backupAllProjects().catch((e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'Nie udało się pobrać kopii zapasowej'
+      )
+    );
   };
 
   const resetImportState = () => {
@@ -349,6 +358,7 @@ export function FileManager({ projects }: FileManagerProps) {
             <input
               type="file"
               accept=".zip"
+              aria-label="Plik ZIP projektu do importu"
               className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-secondary file:text-secondary-foreground disabled:opacity-50"
               onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
               disabled={uploading}
@@ -382,9 +392,8 @@ export function FileManager({ projects }: FileManagerProps) {
           </div>
 
           {uploading && (
-            <div
-              className="space-y-2 rounded-lg border border-muted/60 bg-muted/30 p-3"
-              role="status"
+            <output
+              className="block space-y-2 rounded-lg border border-muted/60 bg-muted/30 p-3"
               aria-live="polite"
             >
               <div className="flex items-center justify-between gap-2 text-sm">
@@ -402,7 +411,7 @@ export function FileManager({ projects }: FileManagerProps) {
                   ? 'Trwa wysyłanie archiwum ZIP do chmury.'
                   : 'Trwa rozpakowanie ZIP i wgrywanie panoram — duże projekty mogą zająć kilka minut. Nie zamykaj tego okna.'}
               </p>
-            </div>
+            </output>
           )}
 
           <DialogFooter>

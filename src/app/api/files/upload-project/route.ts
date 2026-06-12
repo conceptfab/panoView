@@ -151,24 +151,6 @@ export async function POST(request: NextRequest) {
       groupIds
     );
 
-    // Pliki z archiwum trafiają do Vercel Blob
-    const uploadDirToBlob = async (
-      srcDir: string,
-      keyFor: (filename: string) => string
-    ) => {
-      if (!(await exists(srcDir))) return;
-      const files = await fs.readdir(srcDir);
-      for (const f of files) {
-        const src = path.join(srcDir, f);
-        const stat = await fs.stat(src);
-        if (!stat.isFile()) continue;
-        const content = await fs.readFile(src);
-        await putBlob(keyFor(f), content, {
-          contentType: contentTypeForFile(f),
-        });
-      }
-    };
-
     await uploadDirToBlob(path.join(tempDir, 'panoramas'), (f) =>
       panoramaKey(project.id, f)
     );
@@ -223,5 +205,22 @@ async function exists(p: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function uploadDirToBlob(
+  srcDir: string,
+  keyFor: (filename: string) => string
+): Promise<void> {
+  if (!(await exists(srcDir))) return;
+  const files = await fs.readdir(srcDir);
+  for (const f of files) {
+    const src = path.join(srcDir, f);
+    const stat = await fs.stat(src);
+    if (!stat.isFile()) continue;
+    const content = await fs.readFile(src);
+    await putBlob(keyFor(f), content, {
+      contentType: contentTypeForFile(f),
+    });
   }
 }

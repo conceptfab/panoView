@@ -31,8 +31,7 @@ export function useAuth(): AuthContextType {
 }
 
 export function useAuthState() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null | undefined>(undefined);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -45,8 +44,6 @@ export function useAuthState() {
       }
     } catch {
       setUser(null);
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
@@ -70,15 +67,18 @@ export function useAuthState() {
   }, []);
 
   useEffect(() => {
-    refreshSession();
+    void refreshSession();
   }, [refreshSession]);
 
+  const isLoading = user === undefined;
+  const resolvedUser = user ?? null;
+
   return {
-    user,
+    user: resolvedUser,
     isLoading,
-    isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
-    isEditor: user?.role === 'editor',
+    isAuthenticated: resolvedUser !== null,
+    isAdmin: resolvedUser?.role === 'admin',
+    isEditor: resolvedUser?.role === 'editor',
     login,
     logout,
     refreshSession,

@@ -1,58 +1,58 @@
 import { z } from 'zod';
 
 // User validation
-export const userRoleSchema = z.enum(['admin', 'user', 'editor']);
+const userRoleSchema = z.enum(['admin', 'user', 'editor']);
 
-export const userSchema = z.object({
+const userSchema = z.object({
   id: z.string(),
-  email: z.string().email(),
+  email: z.email(),
   role: userRoleSchema,
   isActive: z.boolean(),
-  createdAt: z.string().datetime(),
-  lastLoginAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  lastLoginAt: z.iso.datetime().nullable(),
   groupIds: z.array(z.string()),
 });
 
-export const usersDataSchema = z.object({
+const usersDataSchema = z.object({
   users: z.array(userSchema),
 });
 
 // Group validation
-export const groupSchema = z.object({
+const groupSchema = z.object({
   id: z.string(),
   name: z.string().min(1).max(100),
   description: z.string().max(500),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
   projectIds: z.array(z.string()),
 });
 
-export const groupsDataSchema = z.object({
+const groupsDataSchema = z.object({
   groups: z.array(groupSchema),
 });
 
 // Access control validation
-export const accessRuleSchema = z.object({
+const accessRuleSchema = z.object({
   id: z.string(),
   pattern: z.string().min(1),
   isActive: z.boolean(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
   notes: z.string(),
 });
 
 const pendingRequestSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   requestedAt: z.string(),
 });
 
-export const accessControlSchema = z.object({
+const accessControlSchema = z.object({
   whitelist: z.array(accessRuleSchema),
   blacklist: z.array(accessRuleSchema),
   pending: z.array(pendingRequestSchema).optional(),
 });
 
 // Share link validation
-export const shareLinkSchema = z.object({
+const shareLinkSchema = z.object({
   projectId: z.string(),
   token: z.string(),
   isActive: z.boolean(),
@@ -61,40 +61,40 @@ export const shareLinkSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const shareLinksDataSchema = z.object({
+const shareLinksDataSchema = z.object({
   links: z.array(shareLinkSchema),
 });
 
 // Project validation
-export const projectSchema = z.object({
+const projectSchema = z.object({
   id: z.string(),
   name: z.string().min(1).max(200),
   description: z.string().max(1000),
   thumbnailUrl: z.string(),
   configPath: z.string(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
   createdBy: z.string(),
   groupIds: z.array(z.string()),
   isPublished: z.boolean(),
   panoramaCount: z.number().int().min(0),
 });
 
-export const projectsDataSchema = z.object({
+const projectsDataSchema = z.object({
   projects: z.array(projectSchema),
 });
 
 // Position 3D validation
-export const position3DSchema = z.object({
+const position3DSchema = z.object({
   x: z.number(),
   y: z.number(),
   z: z.number(),
 });
 
 // Hotspot validation
-export const hotspotTypeSchema = z.enum(['link', 'info']);
+const hotspotTypeSchema = z.enum(['link', 'info']);
 
-export const baseHotspotSchema = z.object({
+const baseHotspotSchema = z.object({
   id: z.string(),
   type: hotspotTypeSchema,
   position: position3DSchema,
@@ -104,23 +104,23 @@ export const baseHotspotSchema = z.object({
   color: z.string().optional(),
 });
 
-export const linkHotspotSchema = baseHotspotSchema.extend({
+const linkHotspotSchema = baseHotspotSchema.extend({
   type: z.literal('link'),
   target: z.string(),
 });
 
-export const infoHotspotSchema = baseHotspotSchema.extend({
+const infoHotspotSchema = baseHotspotSchema.extend({
   type: z.literal('info'),
   description: z.string().max(1000),
 });
 
-export const hotspotSchema = z.discriminatedUnion('type', [
+const hotspotSchema = z.discriminatedUnion('type', [
   linkHotspotSchema,
   infoHotspotSchema,
 ]);
 
 // Panorama validation
-export const panoramaSchema = z.object({
+const panoramaSchema = z.object({
   id: z.string(),
   name: z.string().min(1).max(200),
   file: z.string(),
@@ -139,7 +139,7 @@ export const panoramaSchema = z.object({
 });
 
 // Project config validation
-export const projectSettingsSchema = z.object({
+const projectSettingsSchema = z.object({
   autoRotate: z.boolean(),
   autoRotateSpeed: z.number().min(0).max(10),
   autoRotateDelay: z.number().min(0),
@@ -150,7 +150,7 @@ export const projectSettingsSchema = z.object({
   fadeDuration: z.number().min(0),
 });
 
-export const projectMetadataSchema = z.object({
+const projectMetadataSchema = z.object({
   author: z.string(),
   client: z.string(),
   tags: z.array(z.string()),
@@ -160,8 +160,8 @@ export const projectConfigSchema = z.object({
   version: z.string(),
   projectName: z.string(),
   description: z.string(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
   settings: projectSettingsSchema,
   panoramas: z.array(panoramaSchema),
   metadata: projectMetadataSchema,
@@ -169,12 +169,5 @@ export const projectConfigSchema = z.object({
 
 // Login validation
 export const loginSchema = z.object({
-  email: z.string().email('Nieprawidłowy adres email'),
+  email: z.email({ message: 'Nieprawidłowy adres email' }),
 });
-
-// Type exports
-export type UserInput = z.infer<typeof userSchema>;
-export type GroupInput = z.infer<typeof groupSchema>;
-export type ProjectInput = z.infer<typeof projectSchema>;
-export type ProjectConfigInput = z.infer<typeof projectConfigSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;

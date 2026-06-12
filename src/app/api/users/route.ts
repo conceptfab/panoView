@@ -5,7 +5,7 @@ import { addToWhitelist, isEmailAllowed } from '@/lib/auth/access-control';
 import { z } from 'zod';
 
 const createUserSchema = z.object({
-  email: z.string().email('Nieprawidłowy adres email'),
+  email: z.email('Nieprawidłowy adres email'),
   role: z.enum(['admin', 'user', 'editor']).optional().default('user'),
   groupIds: z.array(z.string()).optional().default([]),
   addToWhitelist: z.boolean().optional().default(true),

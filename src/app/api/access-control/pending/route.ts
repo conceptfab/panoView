@@ -8,7 +8,7 @@ import {
 import { z } from 'zod';
 
 const bodySchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   action: z.enum(['approve', 'reject']),
 });
 

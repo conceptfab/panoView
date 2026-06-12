@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Download, HardDrive } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatFileSize } from '@/utils/helpers';
+import { downloadZipFromApi } from '@/utils/download-zip';
 
 interface ProjectDownloadCardProps {
   project: Project;
@@ -13,13 +14,15 @@ interface ProjectDownloadCardProps {
 }
 
 export function ProjectDownloadCard({ project, size }: ProjectDownloadCardProps) {
-  const handleDownload = () => {
-    window.open(
-      `/api/files/projects/${project.id}/download`,
-      '_blank',
-      'noopener,noreferrer'
-    );
-    toast.success(`Pobieranie „${project.name}"…`);
+  const handleDownload = async () => {
+    try {
+      await downloadZipFromApi(`/api/files/projects/${project.id}/download`);
+      toast.success(`Pobieranie „${project.name}"…`);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : 'Nie udało się pobrać projektu'
+      );
+    }
   };
 
   return (

@@ -14,6 +14,8 @@ import {
   getEffectiveViewportWidth,
   resolvePanoramaVariant,
 } from '@/lib/panorama-variants';
+import { useStartupOptimizationNotice } from '@/hooks/useStartupOptimizationNotice';
+import { OptimizationNotice } from './OptimizationNotice';
 import type { PanolensViewer, ImagePanorama } from '@/lib/panolens/types';
 
 interface ExtendedPanorama extends ImagePanorama {
@@ -62,8 +64,6 @@ export function PanoViewer({
   const [optimizedSizesByPanorama, setOptimizedSizesByPanorama] = useState<
     Array<{ width: number; height: number } | null>
   >([]);
-  const [showOptimizationInfo, setShowOptimizationInfo] = useState(false);
-  const shownStartupOptimizationInfoRef = useRef(false);
   const viewStartTimeRef = useRef<number | null>(null);
 
   /** Losowa prędkość 0.2–0.5, losowy kierunek. Zwraca czas pełnego obrotu w ms (Three.js autoRotateSpeed: 2 ≈ 30 s). */
@@ -306,12 +306,14 @@ export function PanoViewer({
 
   useEffect(() => {
     return () => {
-      if (rotationCycleTimeoutRef.current) {
-        clearTimeout(rotationCycleTimeoutRef.current);
+      const rotationTimer = rotationCycleTimeoutRef.current;
+      if (rotationTimer) {
+        clearTimeout(rotationTimer);
         rotationCycleTimeoutRef.current = null;
       }
-      if (viewerRef.current) {
-        (viewerRef.current as { dispose?: () => void }).dispose?.();
+      const viewer = viewerRef.current;
+      if (viewer) {
+        (viewer as { dispose?: () => void }).dispose?.();
       }
     };
   }, []);
@@ -613,27 +615,13 @@ export function PanoViewer({
   }, [projectId, isAdmin]);
 
   const optimizedSize = optimizedSizesByPanorama[currentPanoramaIndex];
-  const optimizationInfoText =
-    config.settings.optimizePanoramaForScreen && optimizedSize
-      ? `Załadowano zoptymalizowaną panoramę: ${optimizedSize.width} x ${optimizedSize.height}`
-      : null;
+  const showOptimizedNotice =
+    config.settings.optimizePanoramaForScreen && optimizedSize !== null;
 
-  useEffect(() => {
-    if (!optimizationInfoText || currentPanoramaIndex !== 0) {
-      setShowOptimizationInfo(false);
-      return;
-    }
-    if (shownStartupOptimizationInfoRef.current) {
-      setShowOptimizationInfo(false);
-      return;
-    }
-    shownStartupOptimizationInfoRef.current = true;
-    setShowOptimizationInfo(true);
-    const timer = setTimeout(() => {
-      setShowOptimizationInfo(false);
-    }, 20000);
-    return () => clearTimeout(timer);
-  }, [optimizationInfoText, currentPanoramaIndex]);
+  const showOptimizationInfo = useStartupOptimizationNotice(
+    showOptimizedNotice,
+    currentPanoramaIndex
+  );
 
   return (
     <>
@@ -699,12 +687,11 @@ export function PanoViewer({
           }
         />
 
-        {optimizationInfoText && showOptimizationInfo && !isLoading && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
-            <div className="bg-black/55 text-white text-sm px-4 py-2 rounded-full backdrop-blur-sm border border-white/20">
-              {optimizationInfoText}
-            </div>
-          </div>
+        {showOptimizedNotice && showOptimizationInfo && !isLoading && optimizedSize && (
+          <OptimizationNotice
+            width={optimizedSize.width}
+            height={optimizedSize.height}
+          />
         )}
       </div>
     </>

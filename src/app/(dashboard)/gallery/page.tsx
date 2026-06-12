@@ -19,6 +19,7 @@ export default async function GalleryPage() {
   const isAdmin = session.role === 'admin';
   const isEditor = session.role === 'editor';
   const canEdit = isAdmin || isEditor;
+  const showAdminGrid = isEditor;
 
   let projects: Project[];
   let groups: Awaited<ReturnType<typeof getGroups>> = [];
@@ -51,12 +52,14 @@ export default async function GalleryPage() {
         <div>
           <h1 className="text-3xl font-extralight">Galeria projektów</h1>
           <p className="text-muted-foreground mt-1">
-            {canEdit
-              ? 'Przeglądaj i edytuj projekty – menu ⋮ na karcie'
-              : 'Wybierz projekt, aby rozpocząć przeglądanie panoram'}
+            {isAdmin
+              ? 'Przeglądaj projekty – zarządzanie w sekcji Projekty'
+              : isEditor
+                ? 'Przeglądaj i edytuj projekty – menu ⋮ na karcie'
+                : 'Wybierz projekt, aby rozpocząć przeglądanie panoram'}
           </p>
         </div>
-        {canEdit && (
+        {isEditor && (
           <Link href="/admin/projects/new">
             <Button>
               <Plus className="size-4 mr-2" />
@@ -69,11 +72,17 @@ export default async function GalleryPage() {
       {projects.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <p>Brak dostępnych projektów</p>
-          {canEdit ? (
+          {isEditor ? (
             <Link href="/admin/projects/new">
               <Button variant="outline" className="mt-4">
                 <Plus className="size-4 mr-2" />
                 Utwórz pierwszy projekt
+              </Button>
+            </Link>
+          ) : isAdmin ? (
+            <Link href="/admin/projects">
+              <Button variant="outline" className="mt-4">
+                Przejdź do projektów
               </Button>
             </Link>
           ) : (
@@ -82,12 +91,12 @@ export default async function GalleryPage() {
             </p>
           )}
         </div>
-      ) : canEdit ? (
+      ) : showAdminGrid ? (
         <AdminProjectGrid
           projects={projects}
           groups={groups}
-          hideGroups={isEditor}
-          disableDownload={isEditor}
+          hideGroups
+          disableDownload
         />
       ) : (
         <ProjectGrid projects={projects} />

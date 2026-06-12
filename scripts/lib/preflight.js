@@ -3,8 +3,10 @@ const path = require('path');
 const { exec } = require('./cli');
 
 function assertVercelProject(rootDir) {
-  const projectJson = path.join(rootDir, '.vercel', 'project.json');
-  if (!fs.existsSync(projectJson)) {
+  const vercelDir = path.join(rootDir, '.vercel');
+  const projectJson = path.join(vercelDir, 'project.json');
+  const repoJson = path.join(vercelDir, 'repo.json');
+  if (!fs.existsSync(projectJson) && !fs.existsSync(repoJson)) {
     throw new Error(
       'Brak .vercel/project.json — uruchom `vercel link` w katalogu projektu.'
     );
