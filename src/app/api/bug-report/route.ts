@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
 import { getUsers } from '@/lib/db/users';
-import { sendBugReportToAdmins } from '@/lib/email/resend';
+import { sendBugReportToAdmins } from '@/lib/email/mail';
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
 

@@ -180,8 +180,16 @@ const requiredEnvVars = [
     secret: true,
   },
   {
-    name: 'RESEND_API_KEY',
-    desc: 'Resend.com API key for emails',
+    name: 'SMTP_HOST',
+    desc: 'Serwer SMTP (np. host372606.hostido.net.pl)',
+  },
+  {
+    name: 'SMTP_USER',
+    desc: 'Login SMTP (adres nadawcy)',
+  },
+  {
+    name: 'SMTP_PASS',
+    desc: 'Hasło SMTP',
     secret: true,
   },
 ];

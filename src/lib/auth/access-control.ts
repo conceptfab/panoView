@@ -4,7 +4,7 @@ import { accessRules, accessPending } from '@/lib/db/schema';
 import { AccessControl, AccessRule } from '@/types';
 import { generateId, formatDate, matchEmailPattern } from '@/utils/helpers';
 import { generateOTP, storeOTP } from '@/lib/auth/otp';
-import { sendOTPEmail } from '@/lib/email/resend';
+import { sendOTPEmail } from '@/lib/email/mail';
 import { getUserByEmail } from '@/lib/db/users';
 
 type AccessRuleRow = typeof accessRules.$inferSelect;

@@ -10,7 +10,7 @@ import { generateOTP, storeOTP } from '@/lib/auth/otp';
 import {
   sendOTPEmail,
   sendPendingRequestNotificationToAdmins,
-} from '@/lib/email/resend';
+} from '@/lib/email/mail';
 import { getUsers, getUserByEmail } from '@/lib/db/users';
 
 export async function POST(request: NextRequest) {
