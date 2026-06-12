@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# Runtime data (managed by Railway volume)
+# Lokalne dane legacy (tylko do jednorazowej migracji: npm run db:migrate-data)
 /data/*.json
 !/data/.gitkeep
 /uploads/projects/*

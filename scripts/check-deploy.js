@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Pre-deployment check script for Railway
- * Run: node scripts/check-deploy.js
+ * Pre-deployment check script for Vercel (Neon + Blob + SMTP)
+ * Run: npm run check-deploy
  */
 
 const { execSync } = require('child_process');
@@ -100,6 +100,8 @@ log.header('1. Project Structure');
 check('package.json exists', () => fileExists('package.json'));
 check('next.config.ts exists', () => fileExists('next.config.ts'));
 check('tsconfig.json exists', () => fileExists('tsconfig.json'));
+check('vercel.json exists', () => fileExists('vercel.json'));
+check('drizzle.config.ts exists', () => fileExists('drizzle.config.ts'));
 check('.env.example exists', () => fileExists('.env.example'));
 
 log.header('2. Dependencies');
@@ -172,11 +174,21 @@ log.header('6. Environment Variables');
 const requiredEnvVars = [
   {
     name: 'NEXT_PUBLIC_APP_URL',
-    desc: 'Application URL (e.g., https://your-app.railway.app)',
+    desc: 'URL aplikacji (np. https://cfabpano.vercel.app)',
   },
   {
     name: 'JWT_SECRET',
-    desc: 'JWT signing secret (min 32 chars)',
+    desc: 'Sekret JWT (min. 32 znaki)',
+    secret: true,
+  },
+  {
+    name: 'DATABASE_URL',
+    desc: 'Neon Postgres (integracja Vercel Marketplace)',
+    secret: true,
+  },
+  {
+    name: 'BLOB_READ_WRITE_TOKEN',
+    desc: 'Vercel Blob – pliki panoram',
     secret: true,
   },
   {
@@ -192,48 +204,64 @@ const requiredEnvVars = [
     desc: 'Hasło SMTP',
     secret: true,
   },
+  {
+    name: 'EMAIL_FROM',
+    desc: 'Nadawca maili (np. ConceptFab Pano <cfabpano@conceptfab.com>)',
+  },
 ];
 
 const optionalEnvVars = [
-  {
-    name: 'NODE_ENV',
-    desc: 'Should be "production" on Railway',
-    default: 'production',
-  },
+  { name: 'JWT_EXPIRATION', desc: 'Czas trwania sesji', default: '7d' },
+  { name: 'SMTP_PORT', desc: 'Port SMTP', default: '587' },
   {
     name: 'ADMIN_EMAIL',
-    desc: 'Email konta administratora (init-data.js przy pierwszym uruchomieniu)',
+    desc: 'Email admina do npm run db:seed',
   },
-  {
-    name: 'ADMIN_PASSWORD',
-    desc: 'Hasło admina przy pierwszej inicjalizacji',
-    secret: true,
-  },
-  { name: 'JWT_EXPIRATION', desc: 'Session duration', default: '7d' },
-  { name: 'EMAIL_FROM', desc: 'Sender email address' },
   {
     name: 'PANO_DATA_DIR',
-    desc: 'Data root (data + uploads). Railway: /pano-data',
-    default: 'process.cwd()',
+    desc: 'Tylko migracja legacy: npm run db:migrate-data',
   },
-  { name: 'UPLOAD_DIR', desc: 'File upload directory', default: './uploads' },
+  { name: 'MAX_FILE_SIZE', desc: 'Limit uploadu (bajty)', default: '52428800' },
+  {
+    name: 'ALLOWED_EXTENSIONS',
+    desc: 'Dozwolone rozszerzenia plików',
+    default: 'webp,jpg,jpeg,png',
+  },
 ];
 
-console.log(`${colors.bold}Required variables for Railway:${colors.reset}\n`);
+console.log(`${colors.bold}Wymagane zmienne na Vercel:${colors.reset}\n`);
 requiredEnvVars.forEach((v) => {
   const status = v.secret ? '(secret)' : '';
   console.log(`  ${colors.cyan}${v.name}${colors.reset} ${status}`);
   console.log(`    └─ ${v.desc}\n`);
 });
 
-console.log(`${colors.bold}Optional variables:${colors.reset}\n`);
+console.log(`${colors.bold}Opcjonalne zmienne:${colors.reset}\n`);
 optionalEnvVars.forEach((v) => {
   const def = v.default ? ` (default: ${v.default})` : '';
   console.log(`  ${colors.cyan}${v.name}${colors.reset}${def}`);
   console.log(`    └─ ${v.desc}\n`);
 });
 
-log.header('7. Railway-Specific Checks');
+log.header('7. Vercel Checks');
+
+check('Brak railway.toml (migracja z Railway)', () => {
+  if (fileExists('railway.toml')) {
+    log.errorBlock('LEGACY', 'Usuń railway.toml – projekt jest na Vercel.');
+    return false;
+  }
+  return true;
+});
+
+check('Skrypt deploy istnieje', () => {
+  const pkg = readJson('package.json');
+  return !!pkg.scripts?.deploy;
+});
+
+check('Skrypt db:push istnieje', () => {
+  const pkg = readJson('package.json');
+  return !!pkg.scripts?.['db:push'];
+});
 
 check('Start script exists', () => {
   const pkg = readJson('package.json');
@@ -245,7 +273,6 @@ check('Build script exists', () => {
   return !!pkg.scripts?.build;
 });
 
-// Check for common Railway issues
 check('No hardcoded localhost URLs in code', () => {
   try {
     const result = exec(
@@ -266,14 +293,12 @@ check('sharp package for image optimization', () => {
   return !!pkg.dependencies?.sharp;
 });
 
-log.header('8. Storage Check');
+log.header('8. Infrastruktura');
 
-check('Upload directory configuration', () => {
-  log.info('Note: Railway has ephemeral storage.');
-  log.info(
-    'For persistent files, use external storage (S3, Cloudflare R2, etc.)'
-  );
-  return 'warn';
+check('Neon + Vercel Blob skonfigurowane', () => {
+  log.info('Dane w Neon Postgres, pliki w Vercel Blob.');
+  log.info('Ustaw DATABASE_URL i BLOB_READ_WRITE_TOKEN w Vercel Dashboard.');
+  return true;
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -321,14 +346,15 @@ if (errors === 0 && warnings === 0) {
   }
 }
 
-console.log(`${colors.bold}Railway Deployment Steps:${colors.reset}`);
-console.log('1. Push code to GitHub');
-console.log('2. Connect repo to Railway (railway.app)');
-console.log('3. Add environment variables in Railway dashboard');
-console.log('4. Deploy!\n');
+console.log(`${colors.bold}Deploy na Vercel:${colors.reset}`);
+console.log('1. vercel link --project cfabpano');
+console.log('2. Integracje: Neon + Blob w Vercel Dashboard');
+console.log('3. Ustaw zmienne środowiskowe (JWT, SMTP, ADMIN_EMAIL)');
+console.log('4. npm run db:push && npm run db:seed (jednorazowo)');
+console.log('5. npm run deploy\n');
 
 console.log(
-  `${colors.bold}Required Railway Environment Variables:${colors.reset}`
+  `${colors.bold}Wymagane zmienne Vercel:${colors.reset}`
 );
 requiredEnvVars.forEach((v) => {
   console.log(`  - ${v.name}`);

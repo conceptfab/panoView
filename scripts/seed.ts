@@ -1,6 +1,6 @@
 /**
  * Seed bazy Neon Postgres: konto administratora + wpis na whitelist.
- * Zastępuje dawny scripts/init-data.js (model OTP – bez hasła).
+ * Zastępuje dawny init-data.js (model OTP – bez hasła).
  *
  * Uruchomienie: npm run db:seed
  * (wymaga DATABASE_URL i ADMIN_EMAIL w .env.local)

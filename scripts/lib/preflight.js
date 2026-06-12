@@ -1,0 +1,22 @@
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('./cli');
+
+function assertVercelProject(rootDir) {
+  const projectJson = path.join(rootDir, '.vercel', 'project.json');
+  if (!fs.existsSync(projectJson)) {
+    throw new Error(
+      'Brak .vercel/project.json — uruchom `vercel link` w katalogu projektu.'
+    );
+  }
+}
+
+function runPreflight(rootDir, { skipBuild = false } = {}) {
+  assertVercelProject(rootDir);
+  exec('npx vercel --version', { cwd: rootDir, silent: true });
+  if (!skipBuild) {
+    exec('npm run build', { cwd: rootDir });
+  }
+}
+
+module.exports = { assertVercelProject, runPreflight };
