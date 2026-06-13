@@ -96,7 +96,9 @@ export function ConsoleShell({
   const initials = userEmail.slice(0, 2).toUpperCase();
   const version = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
   const isFullBleedRoute =
-    pathname === '/command-center' || pathname === '/gallery';
+    pathname === '/command-center' ||
+    pathname === '/gallery' ||
+    pathname === '/admin/groups';
 
   const handleLogout = async () => {
     await logout();
