@@ -98,7 +98,9 @@ export function ConsoleShell({
   const isFullBleedRoute =
     pathname === '/command-center' ||
     pathname === '/gallery' ||
-    pathname === '/admin/groups';
+    pathname === '/admin/groups' ||
+    pathname === '/admin/users' ||
+    pathname === '/admin/stats';
 
   const handleLogout = async () => {
     await logout();
