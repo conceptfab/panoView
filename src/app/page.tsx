@@ -14,11 +14,8 @@ export default async function Home() {
     redirect('/login');
   }
 
-  if (session.role === 'admin') {
-    redirect('/admin/projects');
-  }
-  if (session.role === 'editor') {
-    redirect('/gallery');
+  if (session.role === 'admin' || session.role === 'editor') {
+    redirect('/command-center');
   }
 
   redirect('/gallery');
