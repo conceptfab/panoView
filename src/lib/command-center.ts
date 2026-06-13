@@ -160,7 +160,7 @@ export function buildCommandCenterModel({
         tone: 'warning',
         title: `${project.name} nie ma miniatury`,
         description: 'Wygeneruj miniaturę, żeby lista projektów była czytelna.',
-        href: `/pano/${project.id}`,
+        href: projectHref(project.id),
       });
     }
 

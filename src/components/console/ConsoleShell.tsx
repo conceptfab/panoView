@@ -95,6 +95,7 @@ export function ConsoleShell({
   );
   const initials = userEmail.slice(0, 2).toUpperCase();
   const version = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
+  const isFullBleedRoute = pathname === '/command-center';
 
   const handleLogout = async () => {
     await logout();
@@ -245,7 +246,13 @@ export function ConsoleShell({
           </header>
 
           <main id="main-content" className="min-w-0">
-            {children}
+            {isFullBleedRoute ? (
+              children
+            ) : (
+              <div className="mx-auto w-full max-w-[1440px] px-3 py-4 sm:px-4 lg:px-6">
+                {children}
+              </div>
+            )}
           </main>
         </div>
       </div>
