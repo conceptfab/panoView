@@ -98,6 +98,7 @@ export function ConsoleShell({
   const isFullBleedRoute =
     pathname === '/command-center' ||
     pathname === '/gallery' ||
+    pathname === '/admin/projects' ||
     pathname === '/admin/groups' ||
     pathname === '/admin/users' ||
     pathname === '/admin/stats';
