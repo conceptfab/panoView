@@ -2,41 +2,30 @@
 
 // oxlint-disable react-doctor/prefer-useReducer
 
-import { useState, useEffect, useCallback, Fragment } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Trash2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { UserStatsDay, StatsEvent } from '@/types/stats';
+import type { StatsEvent, UserStatsDay } from '@/types/stats';
+import { cn } from '@/lib/utils';
 
-function eventLabel(e: StatsEvent): string {
-  switch (e.type) {
+function eventLabel(event: StatsEvent): string {
+  switch (event.type) {
     case 'login':
       return 'Logowanie';
     case 'view_start':
-      return `Start: ${e.projectName ?? e.projectId}`;
+      return `Start: ${event.projectName ?? event.projectId}`;
     case 'view_end':
-      return `Koniec: ${e.projectId} (${e.durationSeconds}s)`;
+      return `Koniec: ${event.projectId} (${event.durationSeconds}s)`;
     case 'screenshot':
-      return `Screenshot: ${e.projectName ?? e.projectId}`;
+      return `Screenshot: ${event.projectName ?? event.projectId}`;
     default:
-      return (e as StatsEvent).type;
+      return 'Zdarzenie';
   }
 }
 
 function formatTime(iso: string) {
   try {
-    const d = new Date(iso);
-    return d.toLocaleString('pl-PL', {
+    return new Date(iso).toLocaleString('pl-PL', {
       dateStyle: 'short',
       timeStyle: 'medium',
     });
@@ -68,6 +57,12 @@ export function StatsPanel() {
   const [cleanupOlderThanDays, setCleanupOlderThanDays] = useState(7);
   const [cleaning, setCleaning] = useState(false);
 
+  const totalDays = users.reduce((total, user) => total + user.days.length, 0);
+  const totalEvents = users.reduce(
+    (total, user) => total + user.totalEvents,
+    0
+  );
+
   const fetchList = useCallback(async () => {
     setLoading(true);
     try {
@@ -83,7 +78,11 @@ export function StatsPanel() {
   }, []);
 
   useEffect(() => {
-    fetchList();
+    const timer = setTimeout(() => {
+      fetchList();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [fetchList]);
 
   const fetchUserDetails = useCallback(async (userId: string) => {
@@ -124,12 +123,13 @@ export function StatsPanel() {
       setUserDays([]);
       setSelectedDay(null);
       setDayEvents(null);
-    } else {
-      setExpandedUserId(userId);
-      setSelectedDay(null);
-      setDayEvents(null);
-      fetchUserDetails(userId);
+      return;
     }
+
+    setExpandedUserId(userId);
+    setSelectedDay(null);
+    setDayEvents(null);
+    fetchUserDetails(userId);
   };
 
   const handleCleanup = async () => {
@@ -147,9 +147,9 @@ export function StatsPanel() {
       setSelectedDay(null);
       setDayEvents(null);
       fetchList();
-    } catch (e) {
+    } catch (error) {
       toast.error(
-        e instanceof Error ? e.message : 'Nie udało się usunąć historii'
+        error instanceof Error ? error.message : 'Nie udało się usunąć historii'
       );
     } finally {
       setCleaning(false);
@@ -157,168 +157,249 @@ export function StatsPanel() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extralight">Statystyki</h1>
-          <p className="text-muted-foreground mt-1">
-            Logowania, ruch na stronie, oglądane projekty, screenshoty
-          </p>
+    <div className="min-h-[calc(100vh-3.5rem)] bg-[#050505]">
+      <div className="border-b border-white/10 px-3.5 py-4 sm:px-4 lg:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-normal text-zinc-100">
+              Statystyki
+            </h1>
+            <p className="mt-1 text-xs text-zinc-500">
+              Logowania, sesje, projekty i screenshoty.
+            </p>
+          </div>
+          <CleanupToolbar
+            cleaning={cleaning}
+            cleanupOlderThanDays={cleanupOlderThanDays}
+            handleCleanup={handleCleanup}
+            setCleanupOlderThanDays={setCleanupOlderThanDays}
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <label
-            htmlFor="cleanup-older-than-days"
-            className="text-sm text-muted-foreground"
-          >
-            Usuń historię starszą niż:
-          </label>
-          <input
-            id="cleanup-older-than-days"
-            type="number"
-            min={1}
-            max={365}
-            value={cleanupOlderThanDays}
-            onChange={(e) =>
-              setCleanupOlderThanDays(parseInt(e.target.value, 10) || 7)
-            }
-            className="w-14 rounded border bg-background px-2 py-1 text-sm"
-          />
-          <span className="text-sm text-muted-foreground">dni</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCleanup}
-            disabled={cleaning}
-          >
-            {cleaning ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Trash2 className="size-4" />
-            )}
-            <span className="ml-2">Usuń starą historię</span>
-          </Button>
+        <div className="mt-4 grid grid-cols-3 border border-white/10">
+          <StatCell label="Users" value={users.length} />
+          <StatCell label="Days" value={totalDays} />
+          <StatCell isLast label="Events" value={totalEvents} />
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Użytkownicy ze statystykami</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Kliknij wiersz, aby zobaczyć dni i zdarzenia. Jeden dzień = jeden
-            plik.
-          </p>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="size-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : users.length === 0 ? (
-            <p className="text-muted-foreground py-8 text-center">
-              Brak zapisanych statystyk.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>Email</TableHead>
-                  <TableHead>Dni</TableHead>
-                  <TableHead className="text-right">Zdarzenia</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <Fragment key={u.userId}>
-                    <TableRow
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => toggleExpand(u.userId)}
-                    >
-                      <TableCell>
-                        {expandedUserId === u.userId ? (
-                          <ChevronDown className="size-4" />
-                        ) : (
-                          <ChevronRight className="size-4" />
-                        )}
-                      </TableCell>
-                      <TableCell>{u.email ?? u.userId}</TableCell>
-                      <TableCell>{u.days.length}</TableCell>
-                      <TableCell className="text-right">
-                        {u.totalEvents}
-                      </TableCell>
-                    </TableRow>
-                    {expandedUserId === u.userId && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="bg-muted/30 p-4">
-                          {loadingDetails ? (
-                            <div className="flex justify-center py-4">
-                              <Loader2 className="size-6 animate-spin" />
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              <p className="text-sm font-medium">
-                                Dni ze statystykami
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {userDays.map((d) => (
-                                  <Button
-                                    key={d.date}
-                                    variant={
-                                      selectedDay?.date === d.date &&
-                                      selectedDay?.userId === u.userId
-                                        ? 'secondary'
-                                        : 'outline'
-                                    }
-                                    size="sm"
-                                    onClick={(ev) => {
-                                      ev.stopPropagation();
-                                      fetchDayEvents(u.userId, d.date);
-                                    }}
-                                  >
-                                    {d.date} ({d.eventCount})
-                                  </Button>
-                                ))}
-                              </div>
-                              {dayEvents &&
-                                selectedDay?.userId === u.userId && (
-                                  <div className="mt-4 rounded-lg border bg-background p-3 text-sm">
-                                    <p className="font-medium mb-2">
-                                      Zdarzenia z dnia {dayEvents.date}
-                                    </p>
-                                    <ul className="space-y-1">
-                                      {dayEvents.events.map((e) => (
-                                        <li
-                                          key={`${e.type}-${e.at}`}
-                                          className="flex gap-2 flex-wrap"
-                                        >
-                                          <Badge
-                                            variant="outline"
-                                            className="text-xs"
-                                          >
-                                            {e.type}
-                                          </Badge>
-                                          <span>{eventLabel(e)}</span>
-                                          <span className="text-muted-foreground">
-                                            {formatTime(e.at)}
-                                          </span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
+      <section aria-label="Użytkownicy ze statystykami" className="border-b border-white/10">
+        <div className="hidden grid-cols-[40px_minmax(220px,1fr)_120px_120px] border-b border-white/10 px-5 py-2 text-[11px] font-medium uppercase tracking-normal text-zinc-500 lg:grid">
+          <div />
+          <div>Email</div>
+          <div>Days</div>
+          <div className="text-right">Events</div>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-zinc-500">
+            <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+          </div>
+        ) : users.length === 0 ? (
+          <div className="px-3.5 py-12 text-center text-sm text-zinc-500">
+            Brak zapisanych statystyk.
+          </div>
+        ) : (
+          <div className="divide-y divide-white/10">
+            {users.map((user) => (
+              <Fragment key={user.userId}>
+                <StatsUserRow
+                  expanded={expandedUserId === user.userId}
+                  onToggle={() => toggleExpand(user.userId)}
+                  user={user}
+                />
+                {expandedUserId === user.userId ? (
+                  <StatsDetails
+                    dayEvents={dayEvents}
+                    fetchDayEvents={fetchDayEvents}
+                    loadingDetails={loadingDetails}
+                    selectedDay={selectedDay}
+                    user={user}
+                    userDays={userDays}
+                  />
+                ) : null}
+              </Fragment>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function CleanupToolbar({
+  cleaning,
+  cleanupOlderThanDays,
+  handleCleanup,
+  setCleanupOlderThanDays,
+}: {
+  cleaning: boolean;
+  cleanupOlderThanDays: number;
+  handleCleanup: () => void;
+  setCleanupOlderThanDays: (days: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label
+        className="text-xs text-zinc-500"
+        htmlFor="cleanup-older-than-days"
+      >
+        Starsze niż
+      </label>
+      <input
+        className="h-8 w-16 rounded border border-white/10 bg-[#050505] px-2 text-sm text-zinc-100"
+        id="cleanup-older-than-days"
+        max={365}
+        min={1}
+        onChange={(event) =>
+          setCleanupOlderThanDays(parseInt(event.target.value, 10) || 7)
+        }
+        type="number"
+        value={cleanupOlderThanDays}
+      />
+      <span className="text-xs text-zinc-500">dni</span>
+      <button
+        className="inline-flex h-8 items-center gap-2 rounded border border-white/10 bg-white/[0.03] px-3 text-sm font-medium text-zinc-100 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={cleaning}
+        onClick={handleCleanup}
+        type="button"
+      >
+        {cleaning ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <Trash2 className="size-4" aria-hidden="true" />
+        )}
+        Usuń historię
+      </button>
+    </div>
+  );
+}
+
+function StatCell({
+  isLast = false,
+  label,
+  value,
+}: {
+  isLast?: boolean;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className={cn('px-3 py-3', !isLast && 'border-r border-white/10')}>
+      <div className="text-[11px] font-medium uppercase tracking-normal text-zinc-600">
+        {label}
+      </div>
+      <div className="mt-2 text-lg font-semibold text-zinc-100">{value}</div>
+    </div>
+  );
+}
+
+function StatsUserRow({
+  expanded,
+  onToggle,
+  user,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  user: UserStatsSummary;
+}) {
+  const Icon = expanded ? ChevronDown : ChevronRight;
+
+  return (
+    <button
+      className="grid w-full grid-cols-[28px_minmax(0,1fr)_72px] items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-white/[0.015] lg:grid-cols-[40px_minmax(220px,1fr)_120px_120px] lg:px-5"
+      onClick={onToggle}
+      type="button"
+    >
+      <Icon className="size-4 text-zinc-500" aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-zinc-100">
+          {user.email ?? user.userId}
+        </div>
+        <div className="mt-1 text-[11px] text-zinc-500 lg:hidden">
+          {user.days.length} dni / {user.totalEvents} zdarzeń
+        </div>
+      </div>
+      <div className="hidden text-xs text-zinc-500 lg:block">
+        {user.days.length}
+      </div>
+      <div className="text-right text-xs text-zinc-300">
+        {user.totalEvents}
+      </div>
+    </button>
+  );
+}
+
+function StatsDetails({
+  dayEvents,
+  fetchDayEvents,
+  loadingDetails,
+  selectedDay,
+  user,
+  userDays,
+}: {
+  dayEvents: UserStatsDay | null;
+  fetchDayEvents: (userId: string, date: string) => void;
+  loadingDetails: boolean;
+  selectedDay: { userId: string; date: string } | null;
+  user: UserStatsSummary;
+  userDays: { date: string; eventCount: number; day?: UserStatsDay }[];
+}) {
+  return (
+    <div className="border-t border-white/10 bg-white/[0.015] px-3.5 py-3 lg:px-5">
+      {loadingDetails ? (
+        <div className="flex justify-center py-4 text-zinc-500">
+          <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {userDays.map((day) => {
+              const selected =
+                selectedDay?.date === day.date &&
+                selectedDay?.userId === user.userId;
+
+              return (
+                <button
+                  className={cn(
+                    'h-8 rounded border border-white/10 px-2 text-xs text-zinc-500 transition-colors hover:bg-white/[0.03] hover:text-zinc-100',
+                    selected && 'bg-white/[0.06] text-zinc-100'
+                  )}
+                  key={day.date}
+                  onClick={() => fetchDayEvents(user.userId, day.date)}
+                  type="button"
+                >
+                  {day.date} ({day.eventCount})
+                </button>
+              );
+            })}
+          </div>
+
+          {dayEvents && selectedDay?.userId === user.userId ? (
+            <div className="border border-white/10">
+              <div className="border-b border-white/10 px-3 py-2 text-xs font-medium text-zinc-300">
+                Zdarzenia z dnia {dayEvents.date}
+              </div>
+              <div className="divide-y divide-white/10">
+                {dayEvents.events.map((event) => (
+                  <div
+                    className="grid gap-1 px-3 py-2 text-sm text-zinc-300 sm:grid-cols-[120px_minmax(0,1fr)_160px]"
+                    key={`${event.type}-${event.at}`}
+                  >
+                    <span className="font-mono text-xs text-zinc-500">
+                      {event.type}
+                    </span>
+                    <span className="min-w-0 truncate">{eventLabel(event)}</span>
+                    <span className="text-xs text-zinc-500">
+                      {formatTime(event.at)}
+                    </span>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

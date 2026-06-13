@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     // Return redirect URL
     const redirectUrl =
       user.role === 'admin' || user.role === 'editor'
-        ? '/admin/projects'
+        ? '/command-center'
         : '/gallery';
 
     return NextResponse.json({

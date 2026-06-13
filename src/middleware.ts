@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { verifySessionToken } from '@/lib/auth/jwt';
 
 // Routes that require authentication
-const protectedRoutes = ['/gallery', '/pano', '/admin'];
+const protectedRoutes = ['/gallery', '/pano', '/admin', '/command-center'];
 // Routes that should redirect authenticated users
 const authRoutes = ['/login'];
 
