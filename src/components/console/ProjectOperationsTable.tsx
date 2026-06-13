@@ -1,6 +1,5 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { MoreHorizontal } from 'lucide-react';
 import { ClientDate } from '@/components/ui/client-date';
 import type { CommandCenterProjectRow } from '@/lib/command-center';
 import { cn } from '@/lib/utils';
@@ -14,6 +13,28 @@ const shareLabels: Record<CommandCenterProjectRow['shareState'], string> = {
   inactive: 'link wyłączony',
   none: 'bez linku',
 };
+
+function primaryActionHref(project: CommandCenterProjectRow) {
+  if (project.nextAction === 'Otwórz Studio') {
+    return `/admin/projects/${project.id}/editor`;
+  }
+
+  return `/admin/projects/${project.id}`;
+}
+
+function secondaryAction(project: CommandCenterProjectRow) {
+  if (project.isPublished) {
+    return {
+      href: `/pano/${project.id}`,
+      label: 'Podgląd',
+    };
+  }
+
+  return {
+    href: `/admin/projects/${project.id}`,
+    label: 'Szczegóły',
+  };
+}
 
 export function ProjectOperationsTable({
   projects,
@@ -34,6 +55,7 @@ export function ProjectOperationsTable({
           const previewHref = project.isPublished
             ? `/pano/${project.id}`
             : `/admin/projects/${project.id}`;
+          const secondary = secondaryAction(project);
 
           return (
             <article
@@ -87,13 +109,28 @@ export function ProjectOperationsTable({
                   </span>
                 </div>
 
-                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-zinc-500">
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-zinc-500">
                   <span>{project.panoramaCount} panoram</span>
                   <span>{shareLabels[project.shareState]}</span>
                   <span>
                     <ClientDate value={project.updatedAt} />
                   </span>
-                  <span>{project.nextAction}</span>
+                  <span>{hasThumbnail ? 'miniatura gotowa' : 'brak miniatury'}</span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={primaryActionHref(project)}
+                    className="inline-flex h-7 items-center rounded border border-white/10 bg-zinc-100 px-2.5 text-xs font-medium text-zinc-950 transition-colors hover:bg-white"
+                  >
+                    {project.nextAction}
+                  </Link>
+                  <Link
+                    href={secondary.href}
+                    className="inline-flex h-7 items-center rounded border border-white/10 px-2.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.03] hover:text-zinc-100"
+                  >
+                    {secondary.label}
+                  </Link>
                 </div>
               </div>
             </article>
@@ -108,8 +145,7 @@ export function ProjectOperationsTable({
             <col />
             <col className="w-[130px]" />
             <col className="w-[170px]" />
-            <col className="w-[160px]" />
-            <col className="w-[44px]" />
+            <col className="w-[220px]" />
           </colgroup>
           <thead>
             <tr className="border-b border-white/10 text-[11px] font-medium uppercase tracking-normal text-zinc-500">
@@ -117,8 +153,7 @@ export function ProjectOperationsTable({
               <th className="px-4 py-2 font-medium">Project</th>
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 font-medium">Assets</th>
-              <th className="px-4 py-2 font-medium">Next action</th>
-              <th className="px-4 py-2 font-medium" aria-label="Actions" />
+              <th className="px-4 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -128,6 +163,7 @@ export function ProjectOperationsTable({
             const previewHref = project.isPublished
               ? `/pano/${project.id}`
               : `/admin/projects/${project.id}`;
+            const secondary = secondaryAction(project);
 
             return (
               <tr
@@ -198,18 +234,21 @@ export function ProjectOperationsTable({
                   <div>{hasThumbnail ? 'miniatura gotowa' : 'brak miniatury'}</div>
                 </td>
 
-                <td className="truncate px-4 py-3 align-middle text-sm text-zinc-300">
-                  {project.nextAction}
-                </td>
-
                 <td className="px-4 py-3 align-middle">
-                  <Link
-                    href={`/admin/projects/${project.id}`}
-                    className="flex size-8 items-center justify-center rounded border border-transparent text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/[0.03] hover:text-zinc-100"
-                    aria-label={`Więcej akcji dla ${project.name}`}
-                  >
-                    <MoreHorizontal className="size-4" aria-hidden="true" />
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={primaryActionHref(project)}
+                      className="inline-flex h-7 min-w-20 items-center justify-center rounded border border-white/10 bg-zinc-100 px-2.5 text-xs font-medium text-zinc-950 transition-colors hover:bg-white"
+                    >
+                      {project.nextAction}
+                    </Link>
+                    <Link
+                      href={secondary.href}
+                      className="inline-flex h-7 items-center justify-center rounded border border-white/10 px-2.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/[0.03] hover:text-zinc-100"
+                    >
+                      {secondary.label}
+                    </Link>
+                  </div>
                 </td>
               </tr>
             );
