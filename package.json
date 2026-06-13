@@ -1,6 +1,6 @@
 {
   "name": "panorama-platform",
-  "version": "0.1.62-beta",
+  "version": "0.1.65-beta",
   "private": true,
   "engines": {
     "node": ">=20.9.0"
