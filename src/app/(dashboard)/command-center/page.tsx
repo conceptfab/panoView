@@ -1,7 +1,9 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { getProjectsWithExistingFolders } from '@/lib/db/projects';
 import { getShareLinks } from '@/lib/db/share-links';
+import { getUserById } from '@/lib/db/users';
 import { buildCommandCenterModel } from '@/lib/command-center';
 import { CommandBar } from '@/components/console/CommandBar';
 import { ConsoleSection } from '@/components/console/ConsoleSection';
@@ -13,12 +15,34 @@ import { ActivityList } from '@/components/console/ActivityList';
 export default async function CommandCenterPage() {
   const session = await getSession();
   if (!session) return null;
+  if (session.role !== 'admin' && session.role !== 'editor') {
+    redirect('/gallery');
+  }
 
   const [projects, shareLinks] = await Promise.all([
     getProjectsWithExistingFolders(),
     getShareLinks(),
   ]);
-  const model = buildCommandCenterModel({ projects, shareLinks });
+  const editorUser =
+    session.role === 'editor' ? await getUserById(session.userId) : null;
+  const scopedProjects =
+    session.role === 'editor'
+      ? editorUser
+        ? projects.filter((project) =>
+            project.groupIds.some((groupId) =>
+              editorUser.groupIds.includes(groupId)
+            )
+          )
+        : []
+      : projects;
+  const scopedProjectIds = new Set(scopedProjects.map((project) => project.id));
+  const scopedShareLinks = shareLinks.filter((link) =>
+    scopedProjectIds.has(link.projectId)
+  );
+  const model = buildCommandCenterModel({
+    projects: scopedProjects,
+    shareLinks: scopedShareLinks,
+  });
 
   const counters = [
     ['Projects', model.summary.totalProjects],
@@ -60,7 +84,7 @@ export default async function CommandCenterPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 grid-cols-1 border-b border-white/10 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid min-h-0 grid-cols-1 border-b border-white/10 xl:grid-cols-[minmax(0,1fr)_360px]">
         <ConsoleSection
           title="Recent Projects"
           meta={`${model.projects.length} projektów`}
@@ -72,7 +96,7 @@ export default async function CommandCenterPage() {
               View all →
             </Link>
           }
-          className="min-w-0 rounded-none border-0 border-r-0 border-white/10 bg-transparent lg:border-r"
+          className="min-w-0 rounded-none border-0 border-b border-white/10 bg-transparent xl:border-b-0 xl:border-r"
         >
           <ProjectOperationsTable projects={model.projects} />
         </ConsoleSection>
